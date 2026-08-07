@@ -1,0 +1,13 @@
+Physics: Newton's Laws of Motion
+
+Newton's First Law (Law of Inertia): An object at rest stays at rest, and an object in motion stays in motion with the same speed and in the same direction unless acted upon by an unbalanced force.
+
+Newton's Second Law: The acceleration of an object is directly proportional to the net force acting on it and inversely proportional to its mass. This is expressed as F = ma, where F is force, m is mass, and a is acceleration.
+
+Newton's Third Law: For every action, there is an equal and opposite reaction. Forces always occur in pairs - when one object exerts a force on another, the second object exerts an equal force in the opposite direction on the first.
+
+Friction is a force that opposes motion between surfaces in contact. Static friction prevents motion, while kinetic friction opposes motion that is already occurring.
+
+Momentum (p) is the product of mass and velocity (p = mv). The law of conservation of momentum states that the total momentum of a closed system remains constant unless external forces act on it.
+
+Work is done when a force causes displacement: W = F × d × cos(θ), where θ is the angle between force and displacement.

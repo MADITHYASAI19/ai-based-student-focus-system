@@ -1,0 +1,11 @@
+Biology: Cell Structure and Function
+
+Cells are the basic building blocks of all living organisms. There are two main types of cells: prokaryotic and eukaryotic. Prokaryotic cells lack a nucleus and membrane-bound organelles, while eukaryotic cells have both.
+
+The cell membrane is a phospholipid bilayer that controls what enters and exits the cell. It is selectively permeable, allowing some substances to pass through while blocking others.
+
+Mitochondria are often called the "powerhouse of the cell" because they generate ATP through cellular respiration. The nucleus contains DNA and controls the cell's activities by regulating gene expression.
+
+Ribosomes are responsible for protein synthesis. They can be found free in the cytoplasm or attached to the rough endoplasmic reticulum.
+
+Plant cells have additional structures like cell walls and chloroplasts for photosynthesis. Animal cells do not have these structures but may have centrioles for cell division.

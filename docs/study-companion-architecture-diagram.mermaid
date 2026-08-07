@@ -1,0 +1,69 @@
+flowchart TB
+    subgraph Client["Client Layer"]
+        WEB["React Web App"]
+        MOB["Mobile App"]
+        CV["On-Device CV Inference<br/>(face, posture, phone detection)"]
+    end
+
+    GW["API Gateway / Auth"]
+
+    subgraph Services["Microservices"]
+        PLAN["Study Planner Service"]
+        SESS["Session & Focus Service"]
+        QUIZ["Quiz Generator Service"]
+        INT["AI Interview Service"]
+        DOUBT["Doubt Solver (RAG) Service"]
+        GAM["Gamification Service"]
+        MKT["Marketplace & Payments"]
+        CERT["Certification Service"]
+        ANALYTICS["Analytics Service"]
+        NOTIF["Notification Service"]
+    end
+
+    subgraph Data["Data Layer"]
+        PG[("PostgreSQL")]
+        MONGO[("MongoDB")]
+        VEC[("Vector DB")]
+        REDIS[("Redis Cache")]
+        S3[("Object Storage")]
+    end
+
+    EVENTBUS{{"Event Bus<br/>(Redis Streams / Kafka)"}}
+
+    WEB --> GW
+    MOB --> GW
+    CV -.->|derived signals only, never raw video| SESS
+
+    GW --> PLAN
+    GW --> SESS
+    GW --> QUIZ
+    GW --> INT
+    GW --> DOUBT
+    GW --> GAM
+    GW --> MKT
+    GW --> CERT
+    GW --> ANALYTICS
+
+    PLAN --> PG
+    SESS --> PG
+    SESS --> REDIS
+    QUIZ --> MONGO
+    QUIZ --> PG
+    INT --> PG
+    INT --> S3
+    DOUBT --> VEC
+    DOUBT --> S3
+    GAM --> REDIS
+    GAM --> PG
+    MKT --> PG
+    CERT --> PG
+    CERT --> S3
+    ANALYTICS --> PG
+    ANALYTICS --> MONGO
+
+    SESS --> EVENTBUS
+    QUIZ --> EVENTBUS
+    PLAN --> EVENTBUS
+    EVENTBUS --> NOTIF
+    EVENTBUS --> GAM
+    EVENTBUS --> ANALYTICS

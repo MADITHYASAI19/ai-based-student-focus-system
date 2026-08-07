@@ -1,0 +1,14 @@
+Mathematics: Quadratic Equations
+
+A quadratic equation is an equation of the form ax² + bx + c = 0, where a, b, and c are constants and a ≠ 0. The solutions to a quadratic equation are called roots and can be found using the quadratic formula: x = (-b ± √(b² - 4ac)) / 2a.
+
+The discriminant (b² - 4ac) determines the nature of the roots:
+- If discriminant > 0: Two distinct real roots
+- If discriminant = 0: One real root (repeated)
+- If discriminant < 0: Two complex conjugate roots
+
+Quadratic functions graph as parabolas. The vertex of the parabola is at x = -b/(2a). If a > 0, the parabola opens upward; if a < 0, it opens downward.
+
+Factoring is another method to solve quadratic equations when possible. Common factoring patterns include difference of squares (a² - b² = (a+b)(a-b)) and perfect square trinomials (a² ± 2ab + b² = (a ± b)²).
+
+Completing the square is a technique that transforms a quadratic into vertex form: a(x - h)² + k, where (h, k) is the vertex.

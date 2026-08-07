@@ -1,0 +1,406 @@
+# AI Study Companion — 7-Day Implementation Plan
+
+**Role:** Lead Software Architect & AI/ML Specialist
+**Team:** 1 SDE (Backend/Infra) + 1 AI/ML Intern (Model/Pipeline), working in parallel tracks that converge each day
+**Stack:** FastAPI · PostgreSQL · Redis · ChromaDB (vector store) · React (frontend) · LLM API (Claude/OpenAI)
+**Scope for this sprint:** The core loop — **Adaptive Study Planner → Session Focus Tracking → AI Quiz Generator**, plus the **RAG Doubt Solver**, wired to a working frontend.
+
+---
+
+## How to Use This Plan
+
+- Each day has a **hard cutoff**: the End-of-Day Verification must pass before Day N+1 starts. If it doesn't, Day N+1's morning is spent fixing Day N, not starting new work.
+- The SDE owns everything under `app/` (API, DB, infra). The AI/ML Intern owns everything under `ai_service/` (pipelines, prompts, model logic) and exposes it as **plain Python functions with typed inputs/outputs** — never FastAPI routes directly. The SDE wraps those functions in routes. This is the seam that lets both people work without blocking each other.
+- Contract-first: any endpoint or function signature the two of you will share is written down (as a Pydantic model or function stub) **before** either of you implements it, ideally at the start of Day 1.
+
+---
+
+## Repository Structure (established Day 1, stable for the rest of the week)
+
+```
+ai-study-companion/
+├── app/                          # SDE-owned
+│   ├── main.py                   # FastAPI app factory, router registration
+│   ├── core/
+│   │   ├── config.py             # Settings via pydantic-settings
+│   │   ├── database.py           # SQLAlchemy engine/session
+│   │   └── security.py           # JWT, password hashing
+│   ├── models/                   # SQLAlchemy models
+│   │   ├── user.py
+│   │   ├── study_plan.py
+│   │   ├── session.py
+│   │   └── quiz.py
+│   ├── schemas/                  # Pydantic request/response models
+│   │   ├── plan.py
+│   │   ├── session.py
+│   │   ├── quiz.py
+│   │   └── doubt.py
+│   ├── routers/
+│   │   ├── auth.py
+│   │   ├── plans.py
+│   │   ├── sessions.py
+│   │   ├── quizzes.py
+│   │   └── doubts.py
+│   ├── services/                 # Business logic, calls into ai_service/
+│   │   ├── plan_service.py
+│   │   ├── session_service.py
+│   │   ├── quiz_service.py
+│   │   └── doubt_service.py
+│   └── deps.py                   # Shared FastAPI dependencies (get_db, get_current_user)
+│
+├── ai_service/                   # AI/ML Intern-owned
+│   ├── preprocessing/
+│   │   ├── chunker.py            # Note/PDF chunking for RAG
+│   │   └── cleaner.py            # Text normalization
+│   ├── embeddings/
+│   │   └── embed.py              # Embedding generation + vector store client
+│   ├── generation/
+│   │   ├── quiz_gen.py           # Topic + difficulty -> quiz questions
+│   │   └── doubt_solver.py       # Retrieval + grounded LLM answer
+│   ├── prompts/
+│   │   ├── quiz_prompt.py
+│   │   └── doubt_prompt.py
+│   └── evaluation/
+│       └── eval_harness.py       # Offline scoring of generation quality
+│
+├── frontend/                     # React app (Vite)
+│   └── src/
+│       ├── api/                  # Typed API client
+│       ├── pages/
+│       └── components/
+│
+├── tests/
+│   ├── test_plans.py
+│   ├── test_sessions.py
+│   ├── test_quizzes.py
+│   └── test_doubts.py
+│
+├── alembic/                      # DB migrations
+├── docker-compose.yml            # postgres, redis, chroma, backend, frontend
+├── requirements.txt
+└── .env.example
+```
+
+---
+
+## Day 1 — Foundations: Skeleton, Contracts, Data Pipeline Bootstrap
+
+### Objective
+Stand up a running FastAPI app with a real database connection and CI-ready structure; in parallel, get raw study content flowing through a preprocessing pipeline the AI features will depend on all week.
+
+### SDE Tasks
+- Initialize the repo with the directory structure above; `app/main.py` boots a FastAPI app with a `/health` endpoint.
+- Set up `docker-compose.yml` with `postgres`, `redis`, and `chroma` services.
+- Configure `core/config.py` (pydantic-settings, reads `.env`) and `core/database.py` (SQLAlchemy engine + `SessionLocal`).
+- Define initial SQLAlchemy models: `User`, `Subject`, `Topic`, `StudyPlan`, `PlanItem`.
+- Set up Alembic and generate/apply the first migration.
+- Write the **Pydantic contract stubs** for Day 2–4 endpoints (`schemas/plan.py`, `schemas/quiz.py`, `schemas/doubt.py`) even though the logic isn't built yet — this is what the Intern codes against.
+
+### AI/ML Intern Tasks
+- Set up `ai_service/` package with a working Python environment (`pip install -r ai_service/requirements.txt`: `openai`/`anthropic` SDK, `chromadb`, `tiktoken`, `pypdf`).
+- Build `preprocessing/chunker.py`: splits raw text/PDF notes into overlapping chunks (~500 tokens, ~50 token overlap) with `chunk_text(text: str) -> list[str]`.
+- Build `preprocessing/cleaner.py`: strips whitespace/artifacts from OCR or pasted notes.
+- Write a standalone script (`ai_service/scripts/test_pipeline.py`) that loads 2–3 sample text files, cleans, chunks, and prints chunk counts/token estimates.
+- Confirm access to the chosen LLM API key works with a trivial "hello world" completion call, logged to console.
+
+### Implementation Guidelines
+- **Pattern:** Router → Service → Model. Routers never touch SQLAlchemy directly; they call a service function.
+- **Libraries:** `fastapi`, `uvicorn[standard]`, `sqlalchemy`, `alembic`, `pydantic-settings`, `psycopg2-binary`.
+- **Config:** all secrets/URLs via `.env`, never hardcoded. Commit `.env.example` only.
+- **AI/ML side:** keep every function pure (no FastAPI imports in `ai_service/`) — this is what makes Day 4's integration painless.
+
+### End-of-Day Verification
+```bash
+# SDE
+docker compose up -d postgres redis chroma
+uvicorn app.main:app --reload
+curl -s http://localhost:8000/health          # expect {"status":"ok"}
+alembic upgrade head                            # migration applies cleanly
+psql $DATABASE_URL -c "\dt"                     # tables exist: users, subjects, topics, study_plans, plan_items
+
+# AI/ML Intern
+python ai_service/scripts/test_pipeline.py      # prints chunk counts, no errors
+python -c "from ai_service.embeddings.embed import test_llm_connection; test_llm_connection()"  # confirms API key works
+```
+**Gate to Day 2:** `/health` returns 200, migrations applied, and the pipeline script runs end-to-end with no exceptions.
+
+---
+
+## Day 2 — Auth, Planner CRUD & Embedding Pipeline
+
+### Objective
+Users can register/login and create a study plan through real endpoints; in parallel, the Intern gets notes flowing into the vector store with retrievable embeddings.
+
+### SDE Tasks
+- Implement `core/security.py`: password hashing (`bcrypt`), JWT create/verify.
+- Implement `routers/auth.py` + `services/`: `POST /api/auth/register`, `POST /api/auth/login`.
+- Implement `deps.py`: `get_current_user` dependency using the JWT.
+- Implement `routers/plans.py` + `services/plan_service.py`: `POST /api/plans`, `GET /api/plans/{student_id}` — plain CRUD, no adaptive logic yet (that's Day 3).
+- Write `tests/test_plans.py` and `tests/test_auth.py` using `pytest` + `TestClient`.
+
+### AI/ML Intern Tasks
+- Build `embeddings/embed.py`: `embed_chunks(chunks: list[str]) -> list[list[float]]` using the LLM provider's embedding endpoint.
+- Build `embeddings/store.py`: wraps ChromaDB — `upsert_document(doc_id, chunks, embeddings, metadata)` and `query(collection, query_text, top_k=5)`.
+- Load the sample notes from Day 1 into Chroma via a script; confirm a semantic query returns relevant chunks.
+- Draft `prompts/doubt_prompt.py`: the system prompt template that instructs the LLM to answer **only** from retrieved context and cite the source chunk.
+
+### Implementation Guidelines
+- **Auth:** OAuth2PasswordBearer flow, JWT in `Authorization: Bearer` header, 30-min access token expiry for now.
+- **Testing pattern:** every router gets a corresponding `tests/test_<router>.py`; use a separate test database or SQLite in-memory for speed.
+- **Vector store:** one Chroma collection per subject (`collection_name = f"subject_{subject_id}"`) to keep retrieval scoped and fast.
+- **Prompt discipline:** doubt-solver prompt must explicitly instruct "if the answer isn't in the context, say you're not sure" — this is a Day 4 correctness requirement, write it now.
+
+### End-of-Day Verification
+```bash
+# SDE
+pytest tests/test_auth.py tests/test_plans.py -v
+
+curl -s -X POST http://localhost:8000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@x.com","password":"pass1234","name":"Test"}'
+
+TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
+  -d '{"email":"test@x.com","password":"pass1234"}' \
+  -H "Content-Type: application/json" | jq -r .access_token)
+
+curl -s -X POST http://localhost:8000/api/plans \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"exam_deadline":"2026-12-01","items":[]}'   # expect 201 + plan object
+
+# AI/ML Intern
+python ai_service/scripts/load_notes.py           # loads samples into Chroma, no errors
+python -c "
+from ai_service.embeddings.store import query
+results = query('subject_1', 'what is a binary search tree', top_k=3)
+assert len(results) > 0
+print(results)
+"
+```
+**Gate to Day 3:** auth + plan tests pass, JWT flow works end-to-end via curl, and a semantic query against Chroma returns non-empty, relevant results.
+
+---
+
+## Day 3 — Session Tracking, Quiz Endpoint Skeleton & Quiz Generation Logic
+
+### Objective
+Students can start/end a study session and get a score; the quiz API contract is live (returning stub data); the Intern's quiz generator produces real, validated questions in isolation.
+
+### SDE Tasks
+- Implement `models/session.py` (`StudySession`, `FocusEvent`) and `routers/sessions.py`: `POST /api/sessions/start`, `PATCH /api/sessions/{id}/end`.
+- Implement a placeholder `routers/quizzes.py`: `GET /api/quizzes/{topic_id}` returns a **hardcoded** quiz shape matching `schemas/quiz.py` — this unblocks frontend work on Day 5 even before real generation is wired in.
+- Add Redis-backed simple caching helper (`core/cache.py`) to be reused by the analytics/quiz endpoints later.
+- Set up the event pattern: on session end, log an internal event (simple DB row for now — full event bus is out of scope this week, note it in Future Scope).
+
+### AI/ML Intern Tasks
+- Build `generation/quiz_gen.py`: `generate_quiz(topic: str, difficulty: str, n_questions: int = 5) -> list[QuizQuestion]` calling the LLM with `prompts/quiz_prompt.py`.
+- Define the `QuizQuestion` dataclass/Pydantic model **matching the SDE's `schemas/quiz.py` exactly** — confirm field names together before writing code.
+- Add basic validation: reject/retry if the LLM returns malformed JSON (use `json.loads` in a try/except with one retry).
+- Test generation against 3 different topics and manually review question quality/correctness.
+
+### Implementation Guidelines
+- **Session scoring:** keep it simple for now — `focus_score = time_active / total_time`, refine later; don't let scoring complexity block the endpoint from shipping.
+- **LLM output contract:** always request JSON output explicitly in the prompt ("Respond with valid JSON only, matching this schema: ..."); parse defensively.
+- **Shared schema discipline:** the quiz Pydantic model lives in `app/schemas/quiz.py` and is imported by `ai_service/generation/quiz_gen.py` — one source of truth, no duplicate class definitions.
+
+### End-of-Day Verification
+```bash
+# SDE
+pytest tests/test_sessions.py -v
+
+curl -s -X POST http://localhost:8000/api/sessions/start \
+  -H "Authorization: Bearer $TOKEN" -d '{"plan_item_id":1}' -H "Content-Type: application/json"
+
+curl -s -X PATCH http://localhost:8000/api/sessions/1/end \
+  -H "Authorization: Bearer $TOKEN"                 # expect focus_score in response
+
+curl -s http://localhost:8000/api/quizzes/1 -H "Authorization: Bearer $TOKEN"  # expect stub quiz JSON
+
+# AI/ML Intern
+python -c "
+from ai_service.generation.quiz_gen import generate_quiz
+qs = generate_quiz('Binary Search Trees', 'medium', 5)
+assert len(qs) == 5
+for q in qs: print(q.question_text, '->', q.correct_answer)
+"
+```
+**Gate to Day 4:** session start/end works and returns a score; quiz stub endpoint returns valid schema-matching JSON; `generate_quiz` produces 5 well-formed questions on a real topic with no JSON parse errors.
+
+---
+
+## Day 4 — Wire the AI Into the API: Quiz Generation + Doubt Solver Endpoints
+
+### Objective
+Replace the quiz stub with real generation; ship the RAG doubt-solver endpoint end-to-end. This is the day the two tracks physically merge.
+
+### SDE Tasks
+- Replace the hardcoded response in `routers/quizzes.py` with a call to `services/quiz_service.py`, which calls `ai_service.generation.quiz_gen.generate_quiz(...)`.
+- Add caching: cache generated quizzes per `(topic_id, difficulty)` in Redis for 1 hour to avoid regenerating on every request.
+- Implement `routers/doubts.py`: `POST /api/doubts` — accepts `{student_id, question, subject_id}`, calls `services/doubt_service.py`.
+- Implement `services/doubt_service.py`: retrieves context via `ai_service.embeddings.store.query`, then calls `ai_service.generation.doubt_solver.answer_doubt(question, context_chunks)`.
+- Add structured error handling: if the AI service raises (timeout, malformed output), return a clean `503` with a retry-safe message, not a raw stack trace.
+
+### AI/ML Intern Tasks
+- Build `generation/doubt_solver.py`: `answer_doubt(question: str, context_chunks: list[str]) -> DoubtAnswer` (answer text + list of source chunk IDs used).
+- Enforce groundedness: the prompt must instruct the model to answer only from `context_chunks` and to explicitly say "I'm not confident based on the provided notes" when similarity is low — implement a similarity-score threshold check before even calling the LLM (if top result is below threshold, skip generation and return the low-confidence message directly).
+- Add a lightweight `evaluation/eval_harness.py`: runs 10 hand-written Q&A pairs against the pipeline and reports how many were answered vs. correctly flagged as low-confidence.
+- Sync with SDE on exact function signature and error types (`raise ValueError` vs custom exception) before EOD.
+
+### Implementation Guidelines
+- **Integration seam:** `app/services/*.py` are the *only* files allowed to import from `ai_service/`. Routers never import `ai_service` directly — keeps the boundary enforceable in code review.
+- **Timeouts:** wrap all LLM calls with a hard timeout (e.g. 20s) using `httpx` client timeout settings or the SDK's built-in timeout param; a hanging LLM call must not hang the API worker indefinitely.
+- **Caching key:** `f"quiz:{topic_id}:{difficulty}"` — document this convention in `core/cache.py`.
+
+### End-of-Day Verification
+```bash
+# SDE + AI/ML together
+pytest tests/test_quizzes.py tests/test_doubts.py -v
+
+curl -s http://localhost:8000/api/quizzes/1?difficulty=medium \
+  -H "Authorization: Bearer $TOKEN" | jq .           # real, non-stub questions
+
+curl -s -X POST http://localhost:8000/api/doubts \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"question":"What is the time complexity of BST insertion?","subject_id":1}' | jq .
+# expect: answer text + cited source chunk id(s)
+
+curl -s -X POST http://localhost:8000/api/doubts \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"question":"What year did World War 2 end?","subject_id":1}' | jq .
+# expect: low-confidence / "not in notes" response, NOT a hallucinated answer
+
+# AI/ML Intern
+python ai_service/evaluation/eval_harness.py       # prints accuracy + low-confidence-flag rate
+```
+**Gate to Day 5:** quiz endpoint returns freshly generated (and cached) questions; doubt endpoint answers grounded questions correctly and correctly refuses ungrounded ones; eval harness shows the low-confidence guardrail actually fires on out-of-scope questions.
+
+---
+
+## Day 5 — Frontend Scaffolding & Core API Integration
+
+### Objective
+A working React app can register/login, view a plan, start a session, and see quiz questions rendered — the AI/ML Intern shifts to hardening and edge cases while the SDE focuses on frontend wiring.
+
+### SDE Tasks
+- Scaffold `frontend/` with Vite + React + a typed API client (`frontend/src/api/client.ts` using `axios` or `fetch` wrappers, one function per endpoint).
+- Build pages: `LoginPage`, `PlannerPage` (list plan items), `SessionPage` (start/end session button + score display), `QuizPage` (renders questions, submits answers).
+- Store JWT in memory/`localStorage` (documented as a known simplification — flag for future httpOnly-cookie hardening) and attach it via an axios interceptor.
+- Add `.env` for `VITE_API_BASE_URL` so frontend/backend can run independently.
+
+### AI/ML Intern Tasks
+- Stress-test `generate_quiz` and `answer_doubt` against 15–20 varied topics/questions; log failures (malformed JSON, empty answers, off-topic drift) in a `known_issues.md`.
+- Tune `prompts/quiz_prompt.py` and `prompts/doubt_prompt.py` based on failures found.
+- Add input length guards (reject/truncate notes over a token limit before chunking) to prevent oversized-context errors.
+- Start on the "explain like I actually don't get it" mode stub: `generation/doubt_solver.py::answer_doubt_alternate_style(question, context, prior_attempts)` — logic only, not wired into the API yet.
+
+### Implementation Guidelines
+- **Frontend pattern:** one API function per backend endpoint in `api/`, one hook per page (`usePlan()`, `useSession()`, `useQuiz()`) — no direct fetch calls inside components.
+- **CORS:** enable `CORSMiddleware` in `app/main.py` for `http://localhost:5173` during dev.
+- **Error surfacing:** every API hook catches errors and surfaces a user-readable message; never a blank screen on failure.
+
+### End-of-Day Verification
+```bash
+# SDE
+cd frontend && npm run dev
+# Manual check in browser:
+# 1. Register/login succeeds, redirects to planner
+# 2. Planner page lists plan items (or empty state, no crash)
+# 3. Starting a session shows a live timer; ending it shows a focus score
+# 4. Quiz page renders 5 real questions with selectable answers
+
+curl -s -I http://localhost:5173                 # frontend dev server responds 200
+curl -s http://localhost:8000/docs | grep -q "Study Companion"  # OpenAPI docs load
+
+# AI/ML Intern
+cat ai_service/known_issues.md                    # populated with real findings, not empty
+pytest ai_service/tests/ -v                        # any new unit tests for prompt/guard changes pass
+```
+**Gate to Day 6:** all four manual frontend checks pass with no console errors; known_issues.md reflects real testing, not a placeholder.
+
+---
+
+## Day 6 — Doubt Solver UI, End-to-End Flow & Bug Bash
+
+### Objective
+The doubt-solver chat is live in the UI; the full user journey (login → plan → session → quiz → doubt) works without manual intervention; both roles spend the afternoon jointly bug-bashing.
+
+### SDE Tasks
+- Build `DoubtChatPage`/component: text input, message list, displays cited sources returned by the API.
+- Wire loading/error states for every AI-backed call (quiz generation and doubt answers can take a few seconds — show a spinner, not a frozen UI).
+- Add a `/api/health/deep` endpoint that checks DB, Redis, and vector store connectivity — useful for Day 7 deployment checks.
+- Pair with the Intern for 90 minutes on the bug bash: file every bug found as a GitHub issue with repro steps.
+
+### AI/ML Intern Tasks
+- Join the bug bash focused on AI-output quality: incorrect answers, slow responses, poor question quality.
+- Fix the top 3 highest-impact issues found (prioritize correctness/safety over polish — e.g. a hallucination bug outranks an awkwardly-phrased question).
+- Re-run `eval_harness.py` after fixes and record before/after numbers.
+- Document the final prompt versions in `ai_service/prompts/CHANGELOG.md`.
+
+### Implementation Guidelines
+- **Bug triage rule:** anything where the AI answers confidently and wrongly is P0; anything cosmetic is P2. Fix P0s before EOD, log the rest.
+- **UI loading states:** every button that triggers an LLM call must disable itself and show a spinner while in flight — no double-submits.
+
+### End-of-Day Verification
+```bash
+# SDE
+curl -s http://localhost:8000/api/health/deep | jq .   # {"db":"ok","redis":"ok","vector_store":"ok"}
+
+# Manual full user journey (no restarts, no manual DB edits mid-flow):
+# register -> login -> create plan -> start session -> end session ->
+# view quiz -> submit quiz -> ask doubt-solver a question -> receive cited answer
+
+# AI/ML Intern
+python ai_service/evaluation/eval_harness.py > eval_after.txt
+diff eval_before.txt eval_after.txt   # shows measurable improvement, no regressions
+
+pytest tests/ ai_service/tests/ -v    # full suite, both sides, all green
+```
+**Gate to Day 7:** the entire user journey completes in one unbroken pass; full test suite (backend + AI) is green; eval harness shows improvement or stability, not regression.
+
+---
+
+## Day 7 — Hardening, Deployment Prep & Demo
+
+### Objective
+The app is containerized, documented, and demo-ready with a rehearsed walkthrough — nothing new is built today, only stabilized.
+
+### SDE Tasks
+- Write/finish `Dockerfile` for the backend and add `frontend` build stage or separate `Dockerfile`; confirm `docker compose up` brings up the entire stack (db, redis, chroma, backend, frontend) from a clean clone.
+- Add `README.md` with setup steps, `.env.example` fully filled with placeholder values, and the architecture diagram.
+- Run a load smoke-test on the two AI endpoints (simple loop of 10 sequential requests) to confirm no memory leaks or connection exhaustion under light repeated use.
+- Freeze `requirements.txt` / `package.json` versions (`pip freeze`, exact versions in `package.json`) so the demo environment is reproducible.
+
+### AI/ML Intern Tasks
+- Final pass on `prompts/` — lock the versions used for the demo, tag them in `CHANGELOG.md`.
+- Prepare 5 "known-good" demo questions/topics for quiz generation and doubt-solving that reliably showcase quality (don't rely on live improvisation for a first demo).
+- Write a one-page `ai_service/README.md` explaining the pipeline (chunking → embedding → retrieval → generation) for onboarding future contributors.
+- Sit in on the SDE's smoke test and confirm response quality holds up under repeated calls (no drift/degradation).
+
+### Implementation Guidelines
+- **Do not ship new features today.** Day 7 is stabilization only — any bug found gets fixed, anything else gets filed for next sprint.
+- **Demo script:** write down the exact click-by-click / curl-by-curl path for the demo in `docs/demo_script.md` and rehearse it once, live, before presenting.
+
+### End-of-Day Verification
+```bash
+# Full clean-environment test — the real gate for the week
+git clone <repo> fresh-clone && cd fresh-clone
+cp .env.example .env   # fill in real keys
+docker compose up --build
+
+# Wait for containers, then:
+curl -s http://localhost:8000/api/health/deep | jq .     # all "ok"
+curl -s -I http://localhost:5173                          # frontend responds 200
+
+pytest tests/ ai_service/tests/ -v                         # full suite green, from a clean environment
+
+# Manual: run through docs/demo_script.md exactly as written, start to finish,
+# with no manual database edits or restarts required.
+```
+**Definition of Done for the sprint:** a fresh clone of the repo, with only `.env` filled in, brings up the full stack via `docker compose up --build`, passes the full automated test suite, and supports the complete demo script end-to-end.
+
+---
+
+## Cross-Cutting Rules (apply every day)
+
+- **Daily 15-minute sync** at the start of each day: confirm yesterday's gate passed, confirm today's shared contracts (schemas/function signatures) before either person starts coding.
+- **No silent interface changes.** If either person needs to change a shared Pydantic model or function signature, it's a 2-minute Slack message before the change, not a surprise at integration time.
+- **Every day ends with a green test suite.** A day is not "done" if verification fails — carry the fix into the next morning rather than stacking unverified work.
