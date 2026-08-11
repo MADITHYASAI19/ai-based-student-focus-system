@@ -1,8 +1,16 @@
-from fastapi import APIRouter, Depends, Query, status
+import logging
 
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
 from app.deps import get_current_user
 from app.models.models import User
-from app.schemas.quiz import QuizOut, QuizQuestion
+from app.schemas.quiz import QuizOut
+from app.services.quiz_service import get_or_generate_quiz, QuizTimeoutError
+from ai_service.generation.quiz_gen import QuizGenerationError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -12,39 +20,35 @@ def get_quiz(
     topic_id: int,
     difficulty: str = Query(default="medium"),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """Retrieve a stubbed quiz for a given topic ID matching QuizOut schema."""
-    questions = [
-        QuizQuestion(
-            id=1,
-            question_text="What is the average time complexity of searching an element in a balanced Binary Search Tree (BST)?",
-            type="mcq",
-            options=["O(1)", "O(log n)", "O(n)", "O(n log n)"],
-            correct_answer="O(log n)",
-        ),
-        QuizQuestion(
-            id=2,
-            question_text="Which data structure operates on a Last-In, First-Out (LIFO) principle?",
-            type="mcq",
-            options=["Queue", "Stack", "Array", "Linked List"],
-            correct_answer="Stack",
-        ),
-        QuizQuestion(
-            id=3,
-            question_text="What is the primary advantage of a Hash Table for data lookup?",
-            type="mcq",
-            options=[
-                "Guaranteed sorted elements",
-                "Average O(1) time complexity for key lookup",
-                "Minimal memory footprint",
-                "Automatic graph traversal",
-            ],
-            correct_answer="Average O(1) time complexity for key lookup",
-        ),
-    ]
-
-    return QuizOut(
-        topic_id=topic_id,
-        difficulty=difficulty,
-        questions=questions,
-    )
+    """Retrieve a generated quiz for a given topic ID with caching."""
+    try:
+        return get_or_generate_quiz(topic_id, difficulty, db)
+    except ValueError as e:
+        # Topic not found
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except QuizTimeoutError as e:
+        # LLM timeout
+        logger.error(f"Quiz generation timed out for topic_id={topic_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail={"error": "AI service took too long", "message": "Please try again"}
+        )
+    except QuizGenerationError as e:
+        # Quiz generation failed after retries
+        logger.error(f"Quiz generation failed for topic_id={topic_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error": "Quiz generation failed", "message": "Please try again later"}
+        )
+    except Exception as e:
+        # Other failures
+        logger.error(f"Quiz generation failed for topic_id={topic_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error": "Quiz generation service unavailable", "message": "Please try again later"}
+        )

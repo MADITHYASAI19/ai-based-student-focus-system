@@ -4,3 +4,4 @@ chromadb
 tiktoken
 pypdf
 python-dotenv
+sentence-transformers

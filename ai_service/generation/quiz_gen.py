@@ -25,6 +25,14 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # ---------------------------------------------------------------------------
+# Custom exception for quiz generation failures
+# ---------------------------------------------------------------------------
+
+class QuizGenerationError(Exception):
+    """Raised when quiz generation fails after all retry attempts."""
+    pass
+
+# ---------------------------------------------------------------------------
 # LLM client — Groq's OpenAI-compatible endpoint, key from environment
 # ---------------------------------------------------------------------------
 
@@ -42,7 +50,7 @@ def _get_client() -> OpenAI:
     api_key = os.getenv("AI_API_KEY")
     if not api_key:
         raise ValueError("AI_API_KEY environment variable is not set")
-    return OpenAI(api_key=api_key, base_url=_GROQ_BASE_URL)
+    return OpenAI(api_key=api_key, base_url=_GROQ_BASE_URL, timeout=20.0)
 
 
 def _call_llm(client: OpenAI, messages: list[dict[str, str]]) -> str:
@@ -51,6 +59,7 @@ def _call_llm(client: OpenAI, messages: list[dict[str, str]]) -> str:
         model=_CHAT_MODEL,
         messages=messages,  # type: ignore[arg-type]
         temperature=0.3,
+        timeout=20.0,
     )
     return response.choices[0].message.content or ""
 
@@ -107,8 +116,8 @@ def generate_quiz(
         A validated list of QuizQuestion objects.
 
     Raises:
-        ValueError: If the LLM response cannot be parsed after two attempts,
-                    or if schema validation fails.
+        QuizGenerationError: If the LLM response cannot be parsed after two attempts,
+                             or if schema validation fails.
     """
     client = _get_client()
     messages = build_quiz_prompt(topic=topic, difficulty=difficulty, n_questions=n_questions)
@@ -138,10 +147,12 @@ def generate_quiz(
     try:
         return _parse_questions(raw2)
     except (json.JSONDecodeError, ValueError) as exc:
-        raise ValueError(
+        error_msg = (
             f"generate_quiz failed after 2 attempts for topic='{topic}' "
             f"difficulty='{difficulty}': {exc}"
-        ) from exc
+        )
+        logger.error(error_msg)
+        raise QuizGenerationError(error_msg) from exc
 
 
 # ---------------------------------------------------------------------------

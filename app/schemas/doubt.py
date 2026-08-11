@@ -4,7 +4,6 @@ from pydantic import BaseModel
 
 class DoubtRequest(BaseModel):
     """Schema for doubt resolution request."""
-    student_id: int
     question: str
     subject_id: int
 

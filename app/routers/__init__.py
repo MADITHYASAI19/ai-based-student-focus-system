@@ -1,1 +1,1 @@
-from app.routers import auth, plans
+from app.routers import auth, plans, quizzes, doubts

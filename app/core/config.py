@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     REDIS_URL: str
     CHROMA_URL: str
+    CHROMA_MODE: str = "embedded"
     JWT_SECRET_KEY: str
     AI_API_KEY: str
     FRONTEND_URL: str = "http://localhost:3000"

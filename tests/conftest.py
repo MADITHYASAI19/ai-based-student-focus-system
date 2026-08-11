@@ -4,11 +4,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 
+# Import models FIRST to ensure they're registered with Base
+from app.models import models  # noqa: F401
 from app.main import create_app
 from app.core.database import get_db, Base
-
-# Import models AFTER importing Base to ensure they're registered with the correct Base
-from app.models import models  # noqa: F401
 
 # Use SQLite in-memory for faster tests
 # Tradeoff: SQLite doesn't perfectly match PostgreSQL behavior (e.g., some data types, 
