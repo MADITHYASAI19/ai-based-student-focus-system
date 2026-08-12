@@ -6,6 +6,7 @@ can be used by workers, scripts, and the future API service alike.
 
 import os
 from typing import List
+from functools import lru_cache
 
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
@@ -13,6 +14,12 @@ from sentence_transformers import SentenceTransformer
 
 # Use a small, fast model for demo purposes
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+
+
+@lru_cache(maxsize=1)
+def _get_model():
+    """Lazy-load and cache the SentenceTransformer model."""
+    return SentenceTransformer(EMBEDDING_MODEL)
 
 
 def embed_chunks(chunks: List[str]) -> List[List[float]]:
@@ -33,8 +40,8 @@ def embed_chunks(chunks: List[str]) -> List[List[float]]:
 
     load_dotenv()
     
-    # Load model (cached after first call)
-    model = SentenceTransformer(EMBEDDING_MODEL)
+    # Load model lazily (cached after first call)
+    model = _get_model()
     
     # Generate embeddings
     embeddings = model.encode(chunks, convert_to_numpy=False)

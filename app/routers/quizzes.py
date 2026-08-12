@@ -8,7 +8,6 @@ from app.deps import get_current_user
 from app.models.models import User
 from app.schemas.quiz import QuizOut
 from app.services.quiz_service import get_or_generate_quiz, QuizTimeoutError
-from ai_service.generation.quiz_gen import QuizGenerationError
 
 logger = logging.getLogger(__name__)
 
@@ -38,15 +37,8 @@ def get_quiz(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail={"error": "AI service took too long", "message": "Please try again"}
         )
-    except QuizGenerationError as e:
-        # Quiz generation failed after retries
-        logger.error(f"Quiz generation failed for topic_id={topic_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"error": "Quiz generation failed", "message": "Please try again later"}
-        )
     except Exception as e:
-        # Other failures
+        # AI generation or cache failure
         logger.error(f"Quiz generation failed for topic_id={topic_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

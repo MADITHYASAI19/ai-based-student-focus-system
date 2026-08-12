@@ -12,6 +12,7 @@ import json
 import logging
 import os
 from typing import Any
+from functools import lru_cache
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -21,8 +22,6 @@ from app.schemas.quiz import QuizOut, QuizQuestion
 from ai_service.prompts.quiz_prompt import build_quiz_prompt
 
 logger = logging.getLogger(__name__)
-
-load_dotenv()
 
 # ---------------------------------------------------------------------------
 # Custom exception for quiz generation failures
@@ -45,8 +44,10 @@ _RETRY_CORRECTION = (
 )
 
 
+@lru_cache(maxsize=1)
 def _get_client() -> OpenAI:
-    """Instantiate the OpenAI-compatible Groq client."""
+    """Instantiate and cache the OpenAI-compatible Groq client."""
+    load_dotenv()
     api_key = os.getenv("AI_API_KEY")
     if not api_key:
         raise ValueError("AI_API_KEY environment variable is not set")
@@ -55,6 +56,7 @@ def _get_client() -> OpenAI:
 
 def _call_llm(client: OpenAI, messages: list[dict[str, str]]) -> str:
     """Send messages to the LLM and return the raw response text."""
+    load_dotenv()
     response = client.chat.completions.create(
         model=_CHAT_MODEL,
         messages=messages,  # type: ignore[arg-type]
