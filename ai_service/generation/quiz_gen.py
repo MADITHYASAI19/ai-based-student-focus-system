@@ -19,6 +19,7 @@ from openai import OpenAI
 
 # Single source of truth — do NOT redefine these locally.
 from app.schemas.quiz import QuizOut, QuizQuestion
+from ai_service.config import get_model_name
 from ai_service.prompts.quiz_prompt import build_quiz_prompt
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,6 @@ class QuizGenerationError(Exception):
 # ---------------------------------------------------------------------------
 
 _GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-_CHAT_MODEL = "llama-3.3-70b-versatile"
 
 _RETRY_CORRECTION = (
     "Your last response was invalid JSON. "
@@ -58,7 +58,7 @@ def _call_llm(client: OpenAI, messages: list[dict[str, str]]) -> str:
     """Send messages to the LLM and return the raw response text."""
     load_dotenv()
     response = client.chat.completions.create(
-        model=_CHAT_MODEL,
+        model=get_model_name(),
         messages=messages,  # type: ignore[arg-type]
         temperature=0.3,
         timeout=20.0,

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, plans, quizzes, doubts
+from app.routers import auth, doubts, plans, quizzes, sessions
 
 
 def create_app() -> FastAPI:
@@ -24,6 +24,7 @@ def create_app() -> FastAPI:
     # Include routers
     app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
     app.include_router(plans.router, prefix="/api/plans", tags=["plans"])
+    app.include_router(sessions.router, prefix="/api/sessions", tags=["sessions"])
     app.include_router(quizzes.router, prefix="/api/quizzes", tags=["quizzes"])
     app.include_router(doubts.router, prefix="/api/doubts", tags=["doubts"])
 

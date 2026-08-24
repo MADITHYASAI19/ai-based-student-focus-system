@@ -19,6 +19,7 @@ from functools import lru_cache
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from ai_service.config import get_model_name
 from ai_service.prompts.doubt_prompt import build_doubt_prompt, build_alternate_style_prompt
 from app.schemas.doubt import DoubtAnswer
 
@@ -29,7 +30,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-_CHAT_MODEL = "llama-3.3-70b-versatile"
 _SIMILARITY_THRESHOLD = 0.3
 
 
@@ -47,7 +47,7 @@ def _call_llm(client: OpenAI, messages: list[dict[str, str]]) -> str:
     """Send messages to the LLM and return the raw response text."""
     load_dotenv()
     response = client.chat.completions.create(
-        model=_CHAT_MODEL,
+        model=get_model_name(),
         messages=messages,  # type: ignore[arg-type]
         temperature=0.3,
         timeout=20.0,
