@@ -19,7 +19,7 @@ from functools import lru_cache
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from ai_service.prompts.doubt_prompt import build_doubt_prompt
+from ai_service.prompts.doubt_prompt import build_doubt_prompt, build_alternate_style_prompt
 from app.schemas.doubt import DoubtAnswer
 
 logger = logging.getLogger(__name__)
@@ -118,3 +118,85 @@ def answer_doubt(question: str, context_chunks: list[dict]) -> DoubtAnswer:
     except Exception as e:
         logger.error(f"Failed to answer doubt: {e}")
         raise ValueError(f"Doubt resolution failed: {e}") from e
+
+
+def answer_doubt_alternate_style(
+    question: str,
+    context_chunks: list[dict],
+    prior_attempts: list[str]
+) -> DoubtAnswer:
+    """Answer a student's doubt using a different explanation style than prior attempts.
+    
+    This function uses the same grounding rules as answer_doubt(), but the prompt
+    explicitly instructs the model to explain using a DIFFERENT approach than what's
+    implied by prior_attempts. For example:
+    - If prior attempts used text-heavy explanations, try a concrete worked example
+    - If prior attempts used abstract concepts, try an analogy or visual description
+    - If prior attempts were too technical, try a simpler breakdown
+    
+    Args:
+        question: The student's question
+        context_chunks: List of relevant context chunks from RAG retrieval,
+                        each with keys: id, text, metadata, similarity_score
+        prior_attempts: List of previous answer attempts that the student didn't understand
+        
+    Returns:
+        DoubtAnswer: The answer with source chunk IDs and confidence
+        
+    Raises:
+        ValueError: If LLM call fails or returns empty response
+    """
+    if not question.strip():
+        raise ValueError("Question cannot be empty")
+    
+    if not prior_attempts:
+        logger.warning("No prior attempts provided for alternate style generation")
+        # Fall back to standard answer_doubt if no prior attempts
+        return answer_doubt(question, context_chunks)
+    
+    if not context_chunks:
+        logger.warning("No context chunks provided for doubt resolution")
+        return DoubtAnswer(
+            answer_text="I cannot answer this question because no relevant context was found in the study materials.",
+            source_chunk_ids=[],
+            confidence="low"
+        )
+    
+    # Step 1: Check similarity threshold before spending API call
+    top_chunk = context_chunks[0]
+    similarity_score = top_chunk.get("similarity_score", 0.0)
+    
+    if similarity_score < _SIMILARITY_THRESHOLD:
+        logger.info(f"Top chunk similarity {similarity_score:.3f} below threshold {_SIMILARITY_THRESHOLD}, skipping LLM call")
+        return DoubtAnswer(
+            answer_text="I'm not confident this is covered in your notes.",
+            source_chunk_ids=[],
+            confidence="low"
+        )
+    
+    # Step 2: Build prompt with prior attempts and call LLM
+    try:
+        client = _get_client()
+        chunk_texts = [c["text"] for c in context_chunks]
+        messages = build_alternate_style_prompt(question, chunk_texts, prior_attempts)
+        
+        logger.info(f"Answering doubt with alternate style, {len(context_chunks)} context chunks (top similarity: {similarity_score:.3f})")
+        answer = _call_llm(client, messages)
+        
+        if not answer.strip():
+            raise ValueError("LLM returned empty response")
+        
+        # Step 3: Return DoubtAnswer with high confidence and source chunk IDs
+        source_chunk_ids = [c["id"] for c in context_chunks]
+        
+        logger.info(f"Doubt answered with alternate style, confidence=high, chunks={source_chunk_ids}")
+        
+        return DoubtAnswer(
+            answer_text=answer,
+            source_chunk_ids=source_chunk_ids,
+            confidence="high"
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to answer doubt with alternate style: {e}")
+        raise ValueError(f"Doubt resolution with alternate style failed: {e}") from e

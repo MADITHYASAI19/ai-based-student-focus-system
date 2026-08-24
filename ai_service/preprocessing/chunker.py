@@ -1,6 +1,17 @@
 import tiktoken
+import logging
 from pypdf import PdfReader
 from typing import List
+
+logger = logging.getLogger(__name__)
+
+# Maximum token limit for input text to prevent oversized uploads
+MAX_TOKEN_LIMIT = 50000
+
+
+class NotesTooLargeError(Exception):
+    """Raised when input text exceeds the maximum token limit."""
+    pass
 
 
 def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]:
@@ -17,6 +28,9 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]
     Returns:
         A list of text chunks, each containing at most chunk_size tokens.
 
+    Raises:
+        NotesTooLargeError: If the input text exceeds MAX_TOKEN_LIMIT.
+
     Example:
         >>> text = "This is a sample text that will be chunked into smaller pieces."
         >>> chunks = chunk_text(text, chunk_size=10, overlap=2)
@@ -29,6 +43,17 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]
     """
     encoding = tiktoken.get_encoding("cl100k_base")
     tokens = encoding.encode(text)
+    
+    # Check token limit before processing
+    if len(tokens) > MAX_TOKEN_LIMIT:
+        logger.warning(
+            f"Input text exceeds token limit: {len(tokens)} tokens (limit: {MAX_TOKEN_LIMIT}). "
+            f"Rejecting to prevent oversized processing."
+        )
+        raise NotesTooLargeError(
+            f"Input text exceeds maximum token limit of {MAX_TOKEN_LIMIT} tokens "
+            f"(got {len(tokens)} tokens). Please split your content into smaller files."
+        )
 
     chunks = []
     start = 0
