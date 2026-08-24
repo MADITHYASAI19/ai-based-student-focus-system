@@ -33,32 +33,32 @@ export interface Token {
 
 export interface PlanItemCreate {
   topic_id: number;
-  target_date: string;
-  estimated_hours: number;
-  priority: 'low' | 'medium' | 'high';
+  scheduled_date?: string | null;
+  duration_minutes: number;
+  status?: string;
 }
 
 export interface StudyPlanCreate {
-  student_id: number;
-  plan_items: PlanItemCreate[];
+  exam_deadline: string;
+  items?: PlanItemCreate[];
 }
 
 export interface PlanItemOut {
   id: number;
-  study_plan_id: number;
+  plan_id: number;
   topic_id: number;
-  target_date: string;
-  estimated_hours: number;
-  priority: string;
-  completed: boolean;
-  created_at: string;
+  scheduled_date: string | null;
+  duration_minutes: number;
+  status: string;
 }
 
 export interface StudyPlanOut {
   id: number;
   student_id: number;
-  plan_items: PlanItemOut[];
-  created_at: string;
+  exam_deadline: string | null;
+  status: string;
+  generated_at: string;
+  items: PlanItemOut[];
 }
 
 export interface StudySessionStart {

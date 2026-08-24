@@ -17,11 +17,6 @@ import type {
 // TODO: Harden with httpOnly cookies for production.
 const TOKEN_KEY = 'auth_token';
 
-const getAuthHeaders = () => {
-  const token = localStorage.getItem(TOKEN_KEY);
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
-
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
   headers: {

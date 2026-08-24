@@ -14,10 +14,10 @@ export const PlannerPage: React.FC = () => {
 
     setCreating(true);
     try {
-      // Create plan with empty items for now
+      // Create plan with exam deadline or fallback ISO date
       const planData: StudyPlanCreate = {
-        student_id: userId,
-        plan_items: [],
+        exam_deadline: examDeadline ? new Date(examDeadline).toISOString() : new Date().toISOString(),
+        items: [],
       };
       await createPlan(planData);
       setShowCreateForm(false);
@@ -101,9 +101,9 @@ export const PlannerPage: React.FC = () => {
         {hasPlan && plan ? (
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-xl font-semibold mb-4">Your Study Plan</h2>
-            {plan.plan_items.length > 0 ? (
+            {plan.items && plan.items.length > 0 ? (
               <div className="space-y-3">
-                {plan.plan_items.map((item) => (
+                {plan.items.map((item) => (
                   <div
                     key={item.id}
                     className="flex items-center justify-between p-4 border border-gray-200 rounded-md"
@@ -111,21 +111,21 @@ export const PlannerPage: React.FC = () => {
                     <div>
                       <p className="font-medium text-gray-900">Topic ID: {item.topic_id}</p>
                       <p className="text-sm text-gray-600">
-                        Due: {new Date(item.target_date).toLocaleDateString()}
+                        Scheduled: {item.scheduled_date ? new Date(item.scheduled_date).toLocaleDateString() : 'Unscheduled'}
                       </p>
                       <p className="text-sm text-gray-600">
-                        Priority: {item.priority}
+                        Duration: {item.duration_minutes} mins
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          item.completed
+                          item.status === 'completed'
                             ? 'bg-green-100 text-green-800'
                             : 'bg-yellow-100 text-yellow-800'
                         }`}
                       >
-                        {item.completed ? 'Completed' : 'In Progress'}
+                        {item.status}
                       </span>
                     </div>
                   </div>
