@@ -3,11 +3,11 @@ import { useSession } from '../hooks/useSession';
 
 export const SessionPage: React.FC = () => {
   const { session, loading, error, elapsedTime, formatTime, startSession, endSession } = useSession();
-  const [topicId, setTopicId] = useState<number>(1); // Default topic for demo
+  const [planItemId, setPlanItemId] = useState<number | undefined>(undefined);
 
   const handleStartSession = async () => {
     try {
-      await startSession({ topic_id: topicId });
+      await startSession({ plan_item_id: planItemId });
     } catch (err) {
       console.error('Failed to start session:', err);
     }
@@ -22,7 +22,7 @@ export const SessionPage: React.FC = () => {
     }
   };
 
-  const isSessionActive = session && !session.end_time;
+  const isSessionActive = session && !session.ended_at;
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -38,14 +38,15 @@ export const SessionPage: React.FC = () => {
         {!session ? (
           <div className="bg-white rounded-lg shadow-md p-8">
             <div className="mb-6">
-              <label htmlFor="topicId" className="block text-sm font-medium text-gray-700 mb-2">
-                Topic ID
+              <label htmlFor="planItemId" className="block text-sm font-medium text-gray-700 mb-2">
+                Plan Item ID (Optional)
               </label>
               <input
-                id="topicId"
+                id="planItemId"
                 type="number"
-                value={topicId}
-                onChange={(e) => setTopicId(parseInt(e.target.value) || 1)}
+                value={planItemId ?? ''}
+                onChange={(e) => setPlanItemId(e.target.value ? parseInt(e.target.value) : undefined)}
+                placeholder="Leave blank for general study"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 min="1"
               />
@@ -83,7 +84,9 @@ export const SessionPage: React.FC = () => {
                     </div>
                     <div>
                       <p className="font-medium text-gray-900">Session Active</p>
-                      <p className="text-sm text-gray-600">Studying Topic ID: {session.topic_id}</p>
+                      <p className="text-sm text-gray-600">
+                        {session.plan_item_id ? `Plan Item ID: ${session.plan_item_id}` : 'General Study Session'}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -126,7 +129,7 @@ export const SessionPage: React.FC = () => {
 
                 <div className="text-center text-gray-600">
                   <p>Session ID: {session.id}</p>
-                  <p>Topic ID: {session.topic_id}</p>
+                  {session.plan_item_id && <p>Plan Item ID: {session.plan_item_id}</p>}
                 </div>
 
                 <button

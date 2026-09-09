@@ -5,6 +5,8 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { PlannerPage } from './pages/PlannerPage';
 import { SessionPage } from './pages/SessionPage';
+import { DoubtChatPage } from './pages/DoubtChatPage';
+import { QuizPage } from './pages/QuizPage';
 
 function App() {
   return (
@@ -26,6 +28,22 @@ function App() {
             element={
               <ProtectedRoute>
                 <SessionPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/doubts"
+            element={
+              <ProtectedRoute>
+                <DoubtChatPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/quiz"
+            element={
+              <ProtectedRoute>
+                <QuizPage />
               </ProtectedRoute>
             }
           />

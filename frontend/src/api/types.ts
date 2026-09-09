@@ -62,32 +62,43 @@ export interface StudyPlanOut {
 }
 
 export interface StudySessionStart {
-  topic_id: number;
+  plan_item_id?: number | null;
 }
 
 export interface StudySessionOut {
   id: number;
   student_id: number;
-  topic_id: number;
-  start_time: string;
-  end_time: string | null;
+  plan_item_id: number | null;
+  started_at: string;
+  ended_at: string | null;
   focus_score: number | null;
-  created_at: string;
+  productivity_score: number | null;
 }
 
 export interface QuizQuestion {
-  id: number;
+  id?: number | null;
   question_text: string;
-  type: string;
-  options: string[];
+  type: 'mcq' | 'short_answer' | 'coding';
+  options?: string[] | null;
   correct_answer: string;
-  explanation: string;
 }
 
 export interface QuizOut {
   topic_id: number;
   difficulty: string;
   questions: QuizQuestion[];
+}
+
+export interface QuizAttemptCreate {
+  answers: Record<string, string>;
+}
+
+export interface QuizAttemptOut {
+  id: number;
+  student_id: number;
+  quiz_id: number;
+  score: number;
+  completed_at: string | null;
 }
 
 export interface DoubtRequest {
@@ -98,5 +109,5 @@ export interface DoubtRequest {
 export interface DoubtAnswer {
   answer_text: string;
   source_chunk_ids: string[];
-  confidence: 'low' | 'medium' | 'high';
+  confidence: 'high' | 'low';
 }

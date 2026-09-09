@@ -9,6 +9,8 @@ import type {
   StudySessionStart,
   StudySessionOut,
   QuizOut,
+  QuizAttemptCreate,
+  QuizAttemptOut,
   DoubtRequest,
   DoubtAnswer,
 } from './types';
@@ -91,6 +93,14 @@ export const getQuiz = async (topicId: number, difficulty: string = 'medium'): P
   const response = await apiClient.get<QuizOut>(`/api/quizzes/${topicId}`, {
     params: { difficulty },
   });
+  return response.data;
+};
+
+export const submitQuizAttempt = async (
+  quizId: number,
+  data: QuizAttemptCreate
+): Promise<QuizAttemptOut> => {
+  const response = await apiClient.post<QuizAttemptOut>(`/api/quizzes/${quizId}/attempt`, data);
   return response.data;
 };
 

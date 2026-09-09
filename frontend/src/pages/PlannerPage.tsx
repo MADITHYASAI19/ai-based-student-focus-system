@@ -3,14 +3,13 @@ import { usePlan } from '../hooks/usePlan';
 import type { StudyPlanCreate } from '../api/types';
 
 export const PlannerPage: React.FC = () => {
-  const { plan, loading, error, hasPlan, createPlan, userId } = usePlan();
+  const { plan, loading, error, hasPlan, createPlan } = usePlan();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [examDeadline, setExamDeadline] = useState('');
   const [creating, setCreating] = useState(false);
 
   const handleCreatePlan = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userId) return;
 
     setCreating(true);
     try {

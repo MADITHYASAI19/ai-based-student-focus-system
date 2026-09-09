@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from openai import APITimeoutError
 
 from app.core.cache import cache_get, cache_set
-from app.models.models import Topic
+from app.models.models import Topic, QuizAttempt
 from app.schemas.quiz import QuizOut
 from ai_service.generation.quiz_gen import (
     generate_quiz, 
@@ -75,3 +75,57 @@ def get_or_generate_quiz(topic_id: int, difficulty: str, db: Session) -> QuizOut
     except Exception as e:
         logger.error(f"Failed to generate quiz for topic_id={topic_id}, difficulty={difficulty}: {e}")
         raise
+
+
+def record_quiz_attempt(
+    quiz_id: int,
+    student_id: int,
+    answers: dict[str, str],
+    db: Session,
+) -> QuizAttempt:
+    """Score submitted answers against stored/cached quiz questions and record attempt."""
+    # Find cached quiz across difficulties for this topic/quiz_id
+    quiz = None
+    for diff in ["easy", "medium", "hard"]:
+        cache_key = f"quiz:{quiz_id}:{diff}"
+        cached = cache_get(cache_key)
+        if cached:
+            try:
+                quiz = deserialise_quiz(cached)
+                break
+            except Exception:
+                continue
+
+    if not quiz:
+        # Fallback to topic query and generate or use default
+        topic = db.query(Topic).filter(Topic.id == quiz_id).first()
+        if not topic:
+            raise ValueError(f"Quiz/topic with id {quiz_id} not found")
+        quiz = get_or_generate_quiz(topic_id=quiz_id, difficulty="medium", db=db)
+
+    # Score answers
+    total_questions = len(quiz.questions)
+    if total_questions == 0:
+        calculated_score = 0.0
+    else:
+        correct_count = 0
+        for idx, q in enumerate(quiz.questions):
+            # Check answer submitted by index string (e.g., "0", "1") or by id string
+            student_ans = answers.get(str(idx))
+            if student_ans is None and q.id is not None:
+                student_ans = answers.get(str(q.id))
+
+            if student_ans and student_ans.strip().lower() == q.correct_answer.strip().lower():
+                correct_count += 1
+
+        calculated_score = round((correct_count / total_questions) * 100.0, 2)
+
+    attempt = QuizAttempt(
+        student_id=student_id,
+        quiz_id=quiz_id,
+        score=calculated_score,
+    )
+    db.add(attempt)
+    db.commit()
+    db.refresh(attempt)
+    return attempt

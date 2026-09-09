@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.config import get_settings
 from app.core.database import Base
-from app.models.models import User, Subject, Topic, StudyPlan, PlanItem, StudySession, FocusEvent  # noqa
+from app.models.models import User, Subject, Topic, StudyPlan, PlanItem, StudySession, FocusEvent, QuizAttempt  # noqa
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

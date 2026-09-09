@@ -167,3 +167,82 @@ def test_get_quiz_generation_error_returns_503(client, db_session):
         assert "detail" in data
         assert "error" in data["detail"]
         assert "Quiz generation failed" in data["detail"]["error"]
+
+
+def test_submit_quiz_attempt_persists_and_scores_correctly(client, db_session):
+    """Submitting an attempt persists a QuizAttempt row and calculates the score correctly."""
+    from app.models.models import QuizAttempt
+
+    user_id, token = _register_and_login(client)
+    topic_id = _create_topic(db_session)
+
+    mock_questions = [
+        QuizQuestion(
+            id=1,
+            question_text="What is 2 + 2?",
+            type="mcq",
+            options=["2", "3", "4", "5"],
+            correct_answer="4",
+        ),
+        QuizQuestion(
+            id=2,
+            question_text="What is the capital of France?",
+            type="mcq",
+            options=["London", "Paris", "Berlin", "Rome"],
+            correct_answer="Paris",
+        ),
+        QuizQuestion(
+            id=3,
+            question_text="Is Python typed dynamically?",
+            type="short_answer",
+            options=None,
+            correct_answer="Yes",
+        ),
+        QuizQuestion(
+            id=4,
+            question_text="What is 10 / 2?",
+            type="mcq",
+            options=["2", "4", "5", "10"],
+            correct_answer="5",
+        ),
+    ]
+
+    with patch("app.services.quiz_service.generate_quiz") as mock_gen:
+        mock_gen.return_value = mock_questions
+
+        # First request populates cache
+        resp = client.get(
+            f"/api/quizzes/{topic_id}?difficulty=medium",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+
+        # Submit answers: 3 correct, 1 incorrect out of 4 (expect 75.0%)
+        attempt_payload = {
+            "answers": {
+                "0": "4",       # correct
+                "1": "Paris",   # correct
+                "2": "No",      # incorrect (correct is 'Yes')
+                "3": "5",       # correct
+            }
+        }
+
+        submit_resp = client.post(
+            f"/api/quizzes/{topic_id}/attempt",
+            json=attempt_payload,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert submit_resp.status_code == 201
+        data = submit_resp.json()
+        assert data["student_id"] == user_id
+        assert data["quiz_id"] == topic_id
+        assert data["score"] == 75.0
+        assert "id" in data
+
+        # Verify persisted row in DB
+        attempt_row = db_session.query(QuizAttempt).filter(QuizAttempt.id == data["id"]).first()
+        assert attempt_row is not None
+        assert attempt_row.student_id == user_id
+        assert attempt_row.quiz_id == topic_id
+        assert attempt_row.score == 75.0
+        assert attempt_row.completed_at is not None

@@ -55,6 +55,7 @@ class User(Base):
     children: Mapped[list["User"]] = relationship("User", back_populates="parent")
     study_plans: Mapped[list["StudyPlan"]] = relationship("StudyPlan", back_populates="student")
     study_sessions: Mapped[list["StudySession"]] = relationship("StudySession", back_populates="student", cascade="all, delete-orphan")
+    quiz_attempts: Mapped[list["QuizAttempt"]] = relationship("QuizAttempt", back_populates="student", cascade="all, delete-orphan")
 
 
 class Subject(Base):
@@ -138,4 +139,17 @@ class FocusEvent(Base):
 
     # Relationships
     session: Mapped["StudySession"] = relationship("StudySession", back_populates="focus_events")
+
+
+class QuizAttempt(Base):
+    __tablename__ = "quiz_attempts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    student_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    quiz_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    student: Mapped["User"] = relationship("User", back_populates="quiz_attempts")
 
