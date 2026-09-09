@@ -19,7 +19,15 @@ def start_study_session(
 ):
     """Start a study session for the authenticated user."""
     plan_item_id = session_data.plan_item_id if session_data else None
-    return start_session(db=db, student_id=current_user.id, plan_item_id=plan_item_id)
+    return start_session(
+        db=db,
+        student_id=current_user.id,
+        plan_item_id=plan_item_id,
+        document_id=session_data.document_id if session_data else None,
+        subtopic=session_data.subtopic if session_data else None,
+        explanation_mode=session_data.explanation_mode if session_data else "average",
+        duration_minutes=session_data.duration_minutes if session_data else None,
+    )
 
 
 @router.patch("/{session_id}/end", response_model=StudySessionOut)

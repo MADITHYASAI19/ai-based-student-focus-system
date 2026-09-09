@@ -2,27 +2,9 @@
 
 import json
 import logging
-import os
-from functools import lru_cache
-
-from dotenv import load_dotenv
-from openai import OpenAI
-
-from ai_service.config import get_model_name
+from ai_service.generation.provider import complete_json, complete_text
 
 logger = logging.getLogger(__name__)
-_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-
-
-@lru_cache(maxsize=1)
-def _get_client() -> OpenAI:
-    load_dotenv()
-    api_key = os.getenv("AI_API_KEY")
-    if not api_key:
-        raise ValueError("AI_API_KEY environment variable is not set")
-    return OpenAI(api_key=api_key, base_url=_GROQ_BASE_URL, timeout=30.0)
-
-
 def analyze_document(content: str, topic_name: str) -> dict:
     """Return structured concepts, difficulty, reason, and study hours."""
     if not content.strip():
@@ -43,26 +25,22 @@ def _analyze(topic_name: str, content: str) -> dict:
 Return ONLY valid JSON with this exact shape:
 {{
   "concepts": ["specific concept or subtopic"],
+    "topics": [
+        {{"name": "main topic", "subtopics": [{{"name": "subtopic", "evidence": "verbatim or faithful passage from the document"}}]}}
+    ],
   "difficulty": "easy|medium|hard",
   "difficulty_reason": "one short reason",
   "estimated_hours": 2.5
 }}
 
-Identify concepts covered in the supplied material when available. Estimate hours to fully study and complete the topic based on its scope, material length, and difficulty.
+Identify only concepts, topics, subtopics, and evidence actually supported by the supplied document. Do not invent a topic merely from its name. Estimate hours from the document scope and difficulty.
 
 DOCUMENT:
 {content[:120000]}"""
-    response = _get_client().chat.completions.create(
-        model=get_model_name(),
-        messages=[
+    raw = complete_json([
             {"role": "system", "content": "You are a precise academic curriculum analyst."},
             {"role": "user", "content": prompt},
-        ],
-        temperature=0.1,
-        response_format={"type": "json_object"},
-        timeout=30.0,
-    )
-    raw = response.choices[0].message.content or ""
+        ])
     try:
         result = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -70,11 +48,14 @@ DOCUMENT:
         raise ValueError("The document analysis response was not valid JSON") from exc
 
     concepts = result.get("concepts")
+    topics = result.get("topics", [])
     difficulty = result.get("difficulty")
     reason = result.get("difficulty_reason")
     hours = result.get("estimated_hours")
     if not isinstance(concepts, list) or not all(isinstance(item, str) for item in concepts):
         raise ValueError("Document analysis returned invalid concepts")
+    if not isinstance(topics, list):
+        raise ValueError("Document analysis returned invalid topics")
     if difficulty not in {"easy", "medium", "hard"} or not isinstance(reason, str):
         raise ValueError("Document analysis returned invalid difficulty")
     try:
@@ -84,7 +65,37 @@ DOCUMENT:
 
     return {
         "concepts": concepts[:30],
+        "topics": [
+            {
+                "name": str(topic.get("name", ""))[:200],
+                "subtopics": [
+                    {"name": str(subtopic.get("name", ""))[:200], "evidence": str(subtopic.get("evidence", ""))[:1500]}
+                    for subtopic in topic.get("subtopics", [])
+                    if isinstance(subtopic, dict) and subtopic.get("name")
+                ],
+            }
+            for topic in topics
+            if isinstance(topic, dict) and topic.get("name")
+        ],
         "difficulty": difficulty,
         "difficulty_reason": reason[:500],
         "estimated_hours": round(estimated_hours, 2),
     }
+
+
+def generate_explanation(topic_name: str, subtopic: str, mode: str, evidence: str) -> str:
+    """Explain only the selected PDF evidence at the requested level."""
+    if mode not in {"child", "average", "topper"}:
+        raise ValueError("mode must be child, average, or topper")
+    instructions = {
+        "child": "Use very simple language, analogies, and easy examples. Define technical words.",
+        "average": "Use clear student-level language, standard terminology, and practical examples.",
+        "topper": "Give a rigorous exam-oriented explanation with technical details, edge cases, and connections.",
+    }
+    result = complete_text([
+        {"role": "system", "content": "You are a source-grounded tutor. Never claim facts absent from the provided PDF evidence."},
+        {"role": "user", "content": f"Topic: {topic_name}\nSubtopic: {subtopic}\nMode: {mode}\nInstructions: {instructions[mode]}\n\nPDF evidence:\n{evidence[:12000]}"},
+    ])
+    if not result.strip():
+        raise ValueError("The explanation response was empty")
+    return result

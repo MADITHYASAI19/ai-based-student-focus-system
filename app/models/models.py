@@ -95,6 +95,8 @@ class StudyDocument(Base):
     status: Mapped[str] = mapped_column(String, nullable=False, default="processing")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     concepts: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    structure: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
+    extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     difficulty: Mapped[str | None] = mapped_column(String, nullable=True)
     difficulty_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     estimated_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -145,6 +147,10 @@ class StudySession(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     student_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     plan_item_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("plan_items.id"), nullable=True)
+    document_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("study_documents.id"), nullable=True)
+    subtopic: Mapped[str | None] = mapped_column(String, nullable=True)
+    explanation_mode: Mapped[str] = mapped_column(String, nullable=False, default="average")
+    duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     focus_score: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -153,6 +159,7 @@ class StudySession(Base):
     # Relationships
     student: Mapped["User"] = relationship("User", back_populates="study_sessions")
     plan_item: Mapped["PlanItem | None"] = relationship("PlanItem", back_populates="study_sessions")
+    document: Mapped["StudyDocument | None"] = relationship("StudyDocument")
     focus_events: Mapped[list["FocusEvent"]] = relationship("FocusEvent", back_populates="session", cascade="all, delete-orphan")
 
 

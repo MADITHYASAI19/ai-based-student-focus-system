@@ -7,6 +7,10 @@ class StudySessionStart(BaseModel):
     """Request payload to start a study session."""
 
     plan_item_id: int | None = None
+    document_id: int | None = None
+    subtopic: str | None = None
+    explanation_mode: str = "average"
+    duration_minutes: int | None = None
 
 
 class StudySessionOut(BaseModel):
@@ -17,6 +21,10 @@ class StudySessionOut(BaseModel):
     id: int
     student_id: int
     plan_item_id: int | None = None
+    document_id: int | None = None
+    subtopic: str | None = None
+    explanation_mode: str = "average"
+    duration_minutes: int | None = None
     started_at: datetime
     ended_at: datetime | None = None
     focus_score: float | None = None

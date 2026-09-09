@@ -104,6 +104,16 @@ export const getPlan = async (studentId: number): Promise<StudyPlanOut> => {
   return response.data;
 };
 
+export const getAllPlans = async (): Promise<StudyPlanOut[]> => {
+  const response = await apiClient.get<StudyPlanOut[]>('/api/plans');
+  return response.data;
+};
+
+export const explainDocumentSubtopic = async (documentId: number, subtopic: string, mode: 'child' | 'average' | 'topper') => {
+  const response = await apiClient.post('/api/topics/documents/' + documentId + '/explain', { subtopic, mode });
+  return response.data;
+};
+
 export const createPlan = async (data: StudyPlanCreate): Promise<StudyPlanOut> => {
   const response = await apiClient.post<StudyPlanOut>('/api/plans', data);
   return response.data;

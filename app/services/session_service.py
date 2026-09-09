@@ -9,11 +9,19 @@ def start_session(
     db: Session,
     student_id: int,
     plan_item_id: int | None = None,
+    document_id: int | None = None,
+    subtopic: str | None = None,
+    explanation_mode: str = "average",
+    duration_minutes: int | None = None,
 ) -> StudySession:
     """Start a new study session for a student."""
     session = StudySession(
         student_id=student_id,
         plan_item_id=plan_item_id,
+        document_id=document_id,
+        subtopic=subtopic,
+        explanation_mode=explanation_mode,
+        duration_minutes=duration_minutes,
         started_at=datetime.utcnow(),
     )
     db.add(session)

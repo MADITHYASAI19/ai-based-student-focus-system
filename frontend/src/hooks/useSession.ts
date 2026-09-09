@@ -12,7 +12,7 @@ export const useSession = () => {
   const startNewSession = async (data: StudySessionStart) => {
     setLoading(true);
     setError(null);
-    setElapsedTime(0);
+    setElapsedTime(data.duration_minutes ? data.duration_minutes * 60 : 0);
 
     try {
       const sessionData = await startSession(data);
@@ -20,7 +20,7 @@ export const useSession = () => {
       
       // Start client-side timer
       timerRef.current = setInterval(() => {
-        setElapsedTime((prev) => prev + 1);
+        setElapsedTime((prev) => data.duration_minutes ? Math.max(0, prev - 1) : prev + 1);
       }, 1000);
       
       return sessionData;

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ai_service.embeddings.embed import embed_chunks
 from ai_service.embeddings.store import upsert_document
-from ai_service.generation.document_analyzer import analyze_document, estimate_topic
+from ai_service.generation.document_analyzer import analyze_document, estimate_topic, generate_explanation
 from ai_service.preprocessing.chunker import chunk_text
 from ai_service.preprocessing.cleaner import clean_text
 from app.models.models import StudyDocument, Topic, User
@@ -70,6 +70,8 @@ def process_document(db: Session, document: StudyDocument, topic: Topic, content
         )
         analysis = analyze_document(content, topic.name)
         document.concepts = analysis["concepts"]
+        document.structure = analysis.get("topics", [])
+        document.extracted_text = content
         document.difficulty = analysis["difficulty"]
         document.difficulty_reason = analysis["difficulty_reason"]
         document.estimated_hours = analysis["estimated_hours"]
@@ -115,3 +117,28 @@ def estimate_topic_from_upload(topic_name: str, upload: UploadFile | None) -> di
         filename = Path(upload.filename or "document").name
         content = _extract_text(filename, upload.content_type or "", upload.file.read())
     return estimate_topic(topic_name, content)
+
+
+def explain_document_subtopic(db: Session, document_id: int, user_id: int, subtopic: str, mode: str) -> dict:
+    document = (
+        db.query(StudyDocument)
+        .filter(StudyDocument.id == document_id, StudyDocument.uploaded_by == user_id)
+        .first()
+    )
+    if not document or document.status != "completed":
+        raise ValueError("Processed document not found")
+    evidence = ""
+    for topic in document.structure or []:
+        for item in topic.get("subtopics", []):
+            if item.get("name", "").strip().lower() == subtopic.strip().lower():
+                evidence = item.get("evidence", "")
+                break
+    if not evidence:
+        raise ValueError("That subtopic is not present in the document structure")
+    return {
+        "document_id": document.id,
+        "topic": document.topic.name,
+        "subtopic": subtopic,
+        "mode": mode,
+        "explanation": generate_explanation(document.topic.name, subtopic, mode, evidence),
+    }

@@ -6,11 +6,24 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.deps import get_current_user
 from app.models.models import Topic, User
-from app.schemas.documents import StudyDocumentOut, TopicEstimateOut
-from app.services.document_service import estimate_topic_from_upload, list_documents, upload_document
+from app.schemas.documents import ExplanationOut, ExplanationRequest, StudyDocumentOut, TopicEstimateOut
+from app.services.document_service import explain_document_subtopic, estimate_topic_from_upload, list_documents, upload_document
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@router.post("/documents/{document_id}/explain", response_model=ExplanationOut)
+def explain_subtopic(
+    document_id: int,
+    request: ExplanationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return explain_document_subtopic(db, document_id, current_user.id, request.subtopic, request.mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/estimate", response_model=TopicEstimateOut)

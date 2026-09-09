@@ -1,20 +1,53 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from '../hooks/useSession';
-import { usePlan } from '../hooks/usePlan';
+import { explainDocumentSubtopic, getAllPlans, getTopicDocuments } from '../api/client';
 import { useFocusMonitoring } from '../hooks/useFocusMonitoring';
-import type { MonitoringStrictness } from '../api/types';
+import type { MonitoringStrictness, StudyDocument, StudyPlanOut } from '../api/types';
 
 export const SessionPage: React.FC = () => {
   const { session, loading, error, elapsedTime, formatTime, startSession, endSession } = useSession();
-  const { plan } = usePlan();
+  const [plans, setPlans] = useState<StudyPlanOut[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState<number | undefined>();
   const [selectedPlanItemId, setSelectedPlanItemId] = useState<number | undefined>(undefined);
+  const [documents, setDocuments] = useState<StudyDocument[]>([]);
+  const [selectedDocumentId, setSelectedDocumentId] = useState<number | undefined>();
+  const [selectedSubtopic, setSelectedSubtopic] = useState('');
+  const [explanationMode, setExplanationMode] = useState<'child' | 'average' | 'topper'>('average');
+  const [durationMinutes, setDurationMinutes] = useState(45);
+  const [learningContent, setLearningContent] = useState('');
   const [showConsent, setShowConsent] = useState(false);
   const [strictness, setStrictness] = useState<MonitoringStrictness>('balanced');
   const [monitoringRequested, setMonitoringRequested] = useState(true);
   const [focusPanelOpen, setFocusPanelOpen] = useState(true);
   const { videoRef, monitoring, detectorStatus, monitorError, events, warningCount, focusScore, activeWarning, tabSwitchCount, startMonitoring, stopMonitoring } = useFocusMonitoring();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    getAllPlans().then((items) => {
+      setPlans(items);
+      if (items[0]) setSelectedPlanId(items[0].id);
+    }).catch((err) => console.error('Failed to load study plans:', err));
+  }, []);
+
+  const selectedPlan = plans.find((item) => item.id === selectedPlanId);
+  const planItems = selectedPlan?.items || [];
+  const selectedItem = planItems.find((item) => item.id === selectedPlanItemId);
+  const selectedDocument = documents.find((document) => document.id === selectedDocumentId);
+  const subtopics = (selectedDocument?.structure || []).flatMap((topic) => topic.subtopics || []);
+
+  useEffect(() => {
+    if (!selectedPlanItemId) return;
+    const item = planItems.find((planItem) => planItem.id === selectedPlanItemId);
+    if (!item) return;
+    setDurationMinutes(item.duration_minutes || 45);
+    getTopicDocuments(item.topic_id).then((items) => {
+      const completed = items.filter((document) => document.status === 'completed');
+      setDocuments(completed);
+      setSelectedDocumentId(completed[0]?.id);
+      setSelectedSubtopic(completed[0]?.structure?.[0]?.subtopics?.[0]?.name || '');
+    }).catch((err) => console.error('Failed to load topic documents:', err));
+  }, [selectedPlanItemId, selectedPlanId]);
 
   const handleStart = () => {
     setShowConsent(true);
@@ -24,7 +57,17 @@ export const SessionPage: React.FC = () => {
     setShowConsent(false);
     try {
       if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen().catch(() => undefined);
-      const started = await startSession({ plan_item_id: selectedPlanItemId });
+      const started = await startSession({
+        plan_item_id: selectedPlanItemId,
+        document_id: selectedDocumentId,
+        subtopic: selectedSubtopic || undefined,
+        explanation_mode: explanationMode,
+        duration_minutes: durationMinutes,
+      });
+      if (selectedDocumentId && selectedSubtopic) {
+        const explanation = await explainDocumentSubtopic(selectedDocumentId, selectedSubtopic, explanationMode);
+        setLearningContent(explanation.explanation);
+      }
       if (withMonitoring) await startMonitoring(started.id, strictness);
     } catch (err) {
       console.error('Failed to start session:', err);
@@ -44,8 +87,6 @@ export const SessionPage: React.FC = () => {
 
   const isSessionActive = session && !session.ended_at;
   const isSessionEnded = session && session.ended_at;
-
-  const planItems = plan?.items || [];
 
   return (
     <div className="max-w-3xl mx-auto space-y-8">
@@ -128,24 +169,42 @@ export const SessionPage: React.FC = () => {
         {/* State 1: Before Session Start */}
         {!session && (
           <div className="max-w-md mx-auto space-y-6">
-            <div className="text-left">
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                Assign to Study Plan Item (Optional)
-              </label>
-              <select
-                value={selectedPlanItemId ?? ''}
-                onChange={(e) => setSelectedPlanItemId(e.target.value ? Number(e.target.value) : undefined)}
-                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="">General Study Session (No specific item)</option>
-                {planItems.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.topic_name || `Topic #${item.topic_id}`} ({item.duration_minutes} mins)
-                  </option>
-                ))}
-              </select>
+            <div className="space-y-4 text-left">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">Study Plan</label>
+                <select value={selectedPlanId ?? ''} onChange={(e) => { const id = Number(e.target.value); setSelectedPlanId(id); setSelectedPlanItemId(undefined); setDocuments([]); }} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm">
+                  <option value="">Choose a study plan</option>
+                  {plans.map((item) => <option key={item.id} value={item.id}>Plan #{item.id} · {new Date(item.generated_at).toLocaleDateString()}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">Study Plan Item / Topic</label>
+                <select value={selectedPlanItemId ?? ''} onChange={(e) => setSelectedPlanItemId(e.target.value ? Number(e.target.value) : undefined)} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm">
+                  <option value="">General Study Session</option>
+                  {planItems.map((item) => <option key={item.id} value={item.id}>{item.topic_name || `Topic #${item.topic_id}`} · {item.duration_minutes} min</option>)}
+                </select>
+              </div>
+              {selectedItem && <>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">PDF / Learning Document</label>
+                  <select value={selectedDocumentId ?? ''} onChange={(e) => { const id = Number(e.target.value); const document = documents.find((item) => item.id === id); setSelectedDocumentId(id); setSelectedSubtopic(document?.structure?.[0]?.subtopics?.[0]?.name || ''); }} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm">
+                    <option value="">No processed PDF selected</option>
+                    {documents.map((document) => <option key={document.id} value={document.id}>{document.filename}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">Topic / Subtopic</label>
+                  <select value={selectedSubtopic} onChange={(e) => setSelectedSubtopic(e.target.value)} disabled={!selectedDocumentId} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm">
+                    <option value="">Choose a subtopic</option>
+                    {subtopics.map((subtopic) => <option key={subtopic.name} value={subtopic.name}>{subtopic.name}</option>)}
+                  </select>
+                </div>
+              </>}
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">Explanation</label><select value={explanationMode} onChange={(e) => setExplanationMode(e.target.value as typeof explanationMode)} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm"><option value="child">Child</option><option value="average">Average</option><option value="topper">Topper</option></select></div>
+                <div><label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">Timer (min)</label><input type="number" min="10" max="240" step="5" value={durationMinutes} onChange={(e) => setDurationMinutes(Math.max(10, Math.min(240, Number(e.target.value) || 10)))} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm" /></div>
+              </div>
             </div>
-
             <button
               onClick={handleStart}
               disabled={loading}
@@ -173,6 +232,13 @@ export const SessionPage: React.FC = () => {
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
               Session #{session.id} in progress • Stay focused!
             </div>
+
+            {learningContent && (
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-left">
+                <p className="text-xs font-bold uppercase tracking-wider text-indigo-700">{explanationMode} explanation · {selectedSubtopic}</p>
+                <div className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{learningContent}</div>
+              </div>
+            )}
 
             <button
               onClick={handleEnd}

@@ -3,11 +3,25 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.deps import get_current_user
-from app.models.models import User
+from app.models.models import StudyPlan, User
 from app.schemas.plan import StudyPlanCreate, StudyPlanOut
 from app.services.plan_service import create_plan, get_plan
 
 router = APIRouter()
+
+
+@router.get("", response_model=list[StudyPlanOut])
+def get_all_study_plans(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return every study plan owned by the authenticated user."""
+    return (
+        db.query(StudyPlan)
+        .filter(StudyPlan.student_id == current_user.id)
+        .order_by(StudyPlan.generated_at.desc())
+        .all()
+    )
 
 
 @router.post("", response_model=StudyPlanOut, status_code=status.HTTP_201_CREATED)

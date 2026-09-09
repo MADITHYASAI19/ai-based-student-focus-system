@@ -58,6 +58,10 @@ export interface StudyDocument {
   status: 'processing' | 'completed' | 'failed' | string;
   error_message: string | null;
   concepts: string[];
+  structure: Array<{
+    name: string;
+    subtopics: Array<{ name: string; evidence: string }>;
+  }>;
   difficulty: string | null;
   difficulty_reason: string | null;
   estimated_hours: number | null;
@@ -106,6 +110,10 @@ export interface StudyPlanOut {
 
 export interface StudySessionStart {
   plan_item_id?: number | null;
+  document_id?: number | null;
+  subtopic?: string | null;
+  explanation_mode?: 'child' | 'average' | 'topper';
+  duration_minutes?: number | null;
 }
 
 export interface StudySessionOut {
@@ -116,6 +124,18 @@ export interface StudySessionOut {
   ended_at: string | null;
   focus_score: number | null;
   productivity_score: number | null;
+  document_id: number | null;
+  subtopic: string | null;
+  explanation_mode: string;
+  duration_minutes: number | null;
+}
+
+export interface Explanation {
+  document_id: number;
+  topic: string;
+  subtopic: string;
+  mode: string;
+  explanation: string;
 }
 
 export type MonitoringStrictness = 'lenient' | 'balanced' | 'strict';
