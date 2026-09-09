@@ -21,3 +21,8 @@ class StudySessionOut(BaseModel):
     ended_at: datetime | None = None
     focus_score: float | None = None
     productivity_score: float | None = None
+
+
+class FocusEventCreate(BaseModel):
+    event_type: str
+    strictness: str = "balanced"

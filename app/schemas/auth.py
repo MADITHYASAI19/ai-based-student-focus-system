@@ -35,3 +35,24 @@ class Token(BaseModel):
     """Schema for token response."""
     access_token: str
     token_type: str = "bearer"
+
+
+class LearnedTopicOut(BaseModel):
+    """A topic the student has completed or studied in a finished session."""
+    id: int
+    name: str
+    subject: str
+    difficulty: str
+
+
+class ProfileOut(BaseModel):
+    """Aggregated student profile and learning progress."""
+    user: UserOut
+    profile_score: float
+    focus_score: float | None
+    quiz_average: float | None
+    plan_completion: float
+    completed_sessions: int
+    total_study_minutes: int
+    quiz_attempts: int
+    learned_topics: list[LearnedTopicOut]

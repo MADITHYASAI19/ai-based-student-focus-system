@@ -13,6 +13,9 @@ import type {
   QuizAttemptOut,
   DoubtRequest,
   DoubtAnswer,
+  Profile,
+  StudyDocument,
+  TopicEstimate,
 } from './types';
 
 // NOTE: Token storage in localStorage is a known simplification.
@@ -61,6 +64,35 @@ export const login = async (data: UserLogin): Promise<Token> => {
   return response.data;
 };
 
+export const getProfile = async (): Promise<Profile> => {
+  const response = await apiClient.get<Profile>('/api/auth/me/profile');
+  return response.data;
+};
+
+export const getTopicDocuments = async (topicId: number): Promise<StudyDocument[]> => {
+  const response = await apiClient.get<StudyDocument[]>(`/api/topics/${topicId}/documents`);
+  return response.data;
+};
+
+export const uploadTopicDocument = async (topicId: number, file: File): Promise<StudyDocument> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await apiClient.post<StudyDocument>(`/api/topics/${topicId}/documents`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+export const estimateTopic = async (topicName: string, file?: File): Promise<TopicEstimate> => {
+  const formData = new FormData();
+  formData.append('topic_name', topicName);
+  if (file) formData.append('file', file);
+  const response = await apiClient.post<TopicEstimate>('/api/topics/estimate', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
 export const logout = () => {
   localStorage.removeItem(TOKEN_KEY);
   window.location.href = '/login';
@@ -86,6 +118,13 @@ export const startSession = async (data: StudySessionStart): Promise<StudySessio
 export const endSession = async (sessionId: number): Promise<StudySessionOut> => {
   const response = await apiClient.patch<StudySessionOut>(`/api/sessions/${sessionId}/end`);
   return response.data;
+};
+
+export const recordFocusEvent = async (sessionId: number, eventType: string, strictness: string) => {
+  await apiClient.post(`/api/sessions/${sessionId}/events`, {
+    event_type: eventType,
+    strictness,
+  });
 };
 
 // Quiz endpoint

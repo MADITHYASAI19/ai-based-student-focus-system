@@ -2,7 +2,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.models.models import PlanItem, StudyPlan
+from app.models.models import PlanItem, StudyPlan, Subject, Topic
 from app.schemas.plan import PlanItemCreate
 
 
@@ -21,11 +21,36 @@ def create_plan(
     db.add(db_plan)
     db.flush()
 
+    personal_subject = db.query(Subject).filter(Subject.name == "My Topics").first()
+    if not personal_subject:
+        personal_subject = Subject(name="My Topics")
+        db.add(personal_subject)
+        db.flush()
+
     for item in items:
+        topic_id = item.topic_id
+        if item.topic_name and item.topic_name.strip():
+            topic = (
+                db.query(Topic)
+                .filter(Topic.subject_id == personal_subject.id, Topic.name == item.topic_name.strip())
+                .first()
+            )
+            if not topic:
+                topic = Topic(
+                    subject_id=personal_subject.id,
+                    name=item.topic_name.strip(),
+                    difficulty="medium",
+                    estimated_hours=max(1, round(item.duration_minutes / 60)),
+                )
+                db.add(topic)
+                db.flush()
+            topic_id = topic.id
+        if topic_id is None:
+            raise ValueError("Each plan item needs a topic name")
         db.add(
             PlanItem(
                 plan_id=db_plan.id,
-                topic_id=item.topic_id,
+                topic_id=topic_id,
                 scheduled_date=item.scheduled_date,
                 duration_minutes=item.duration_minutes,
                 status=item.status,

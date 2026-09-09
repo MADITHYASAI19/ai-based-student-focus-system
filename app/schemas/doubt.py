@@ -6,6 +6,7 @@ class DoubtRequest(BaseModel):
     """Schema for doubt resolution request."""
     question: str
     subject_id: int
+    topic_id: int | None = None
 
 
 class DoubtAnswer(BaseModel):

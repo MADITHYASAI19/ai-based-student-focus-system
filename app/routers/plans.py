@@ -17,12 +17,15 @@ def create_study_plan(
     db: Session = Depends(get_db),
 ):
     """Create a study plan owned by the authenticated user."""
-    return create_plan(
-        db=db,
-        student_id=current_user.id,
-        exam_deadline=plan_data.exam_deadline,
-        items=plan_data.items,
-    )
+    try:
+        return create_plan(
+            db=db,
+            student_id=current_user.id,
+            exam_deadline=plan_data.exam_deadline,
+            items=plan_data.items,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("/{student_id}", response_model=StudyPlanOut)

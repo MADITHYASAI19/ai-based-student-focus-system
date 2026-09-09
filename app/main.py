@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, doubts, plans, quizzes, sessions
+from app.routers import auth, doubts, documents, plans, quizzes, sessions
 
 
 def create_app() -> FastAPI:
@@ -15,7 +15,10 @@ def create_app() -> FastAPI:
     # Configure CORS
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173"],
+        allow_origins=[
+            "http://localhost:5173",
+            "http://localhost:5174",
+        ],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -27,6 +30,17 @@ def create_app() -> FastAPI:
     app.include_router(sessions.router, prefix="/api/sessions", tags=["sessions"])
     app.include_router(quizzes.router, prefix="/api/quizzes", tags=["quizzes"])
     app.include_router(doubts.router, prefix="/api/doubts", tags=["doubts"])
+    app.include_router(documents.router, prefix="/api/topics", tags=["documents"])
+
+    @app.get("/")
+    async def root():
+        """Root endpoint linking to API documentation and frontend."""
+        return {
+            "name": "AI Study Companion API",
+            "status": "online",
+            "docs": "http://localhost:8000/docs",
+            "frontend": "http://localhost:5173",
+        }
 
     @app.get("/health")
     async def health_check():

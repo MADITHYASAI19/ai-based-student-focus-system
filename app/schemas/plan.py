@@ -6,7 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field
 class PlanItemCreate(BaseModel):
     """A plan item to create with its parent study plan."""
 
-    topic_id: int
+    topic_id: int | None = None
+    topic_name: str | None = None
     scheduled_date: datetime | None = None
     duration_minutes: int
     status: str = "pending"
@@ -20,6 +21,7 @@ class PlanItemOut(BaseModel):
     id: int
     plan_id: int
     topic_id: int
+    topic_name: str
     scheduled_date: datetime | None = None
     duration_minutes: int
     status: str

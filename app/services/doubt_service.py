@@ -14,7 +14,7 @@ class DoubtTimeoutError(Exception):
     pass
 
 
-def answer_doubt(question: str, subject_id: int) -> DoubtAnswer:
+def answer_doubt(question: str, subject_id: int, topic_id: int | None = None) -> DoubtAnswer:
     """Answer a student's doubt using RAG retrieval and LLM generation.
     
     Args:
@@ -32,7 +32,7 @@ def answer_doubt(question: str, subject_id: int) -> DoubtAnswer:
         raise ValueError("Question cannot be empty")
     
     # Query ChromaDB for relevant context chunks
-    collection_name = f"subject_{subject_id}"
+    collection_name = f"topic_{topic_id}" if topic_id is not None else f"subject_{subject_id}"
     try:
         logger.info(f"Querying collection '{collection_name}' for: {question[:100]}")
         results = query(collection_name, question, top_k=5)

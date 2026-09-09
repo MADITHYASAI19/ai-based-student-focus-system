@@ -17,25 +17,47 @@ const AVAILABLE_SUBJECTS = [
   { id: 4, name: 'Biology' },
 ];
 
+const AVAILABLE_TOPICS = [
+  { id: 1, name: 'Binary Search Trees', subjectId: 1 },
+  { id: 4, name: 'Quadratic Equations', subjectId: 1 },
+  { id: 5, name: 'Cell Structure & Mitochondria', subjectId: 4 },
+];
+
+const SUGGESTED_QUESTIONS = [
+  { text: 'What is the quadratic formula?', subjectId: 1 },
+  { text: 'What does the discriminant tell us about quadratic roots?', subjectId: 1 },
+  { text: 'What is the function of mitochondria in eukaryotic cells?', subjectId: 4 },
+  { text: 'How do you bake a chocolate cake?', subjectId: 1, isOffTopic: true },
+];
+
 export const DoubtChatPage: React.FC = () => {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: 'welcome',
+      sender: 'ai',
+      text: "Hello! I'm your AI Study Companion tutor. Ask me any question grounded in your course notes, and I'll retrieve relevant references with verified confidence.",
+      subjectName: 'All Subjects',
+      confidence: 'high',
+      timestamp: new Date(),
+    },
+  ]);
   const [question, setQuestion] = useState('');
   const [selectedSubjectId, setSelectedSubjectId] = useState<number>(AVAILABLE_SUBJECTS[0].id);
+  const [selectedTopicId, setSelectedTopicId] = useState<number | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleAskDoubt = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmedQuestion = question.trim();
-    if (!trimmedQuestion || loading) return;
+  const handleAskDoubt = async (questionText: string, subjectId: number) => {
+    const trimmed = questionText.trim();
+    if (!trimmed || loading) return;
 
-    const currentSubject = AVAILABLE_SUBJECTS.find((s) => s.id === selectedSubjectId);
-    const subjectName = currentSubject ? currentSubject.name : `Subject #${selectedSubjectId}`;
+    const currentSubject = AVAILABLE_SUBJECTS.find((s) => s.id === subjectId);
+    const subjectName = currentSubject ? currentSubject.name : `Subject #${subjectId}`;
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       sender: 'user',
-      text: trimmedQuestion,
+      text: trimmed,
       subjectName,
       timestamp: new Date(),
     };
@@ -47,8 +69,9 @@ export const DoubtChatPage: React.FC = () => {
 
     try {
       const response: DoubtAnswer = await askDoubt({
-        question: trimmedQuestion,
-        subject_id: selectedSubjectId,
+        question: trimmed,
+        subject_id: subjectId,
+        topic_id: selectedTopicId,
       });
 
       const aiMessage: Message = {
@@ -76,192 +99,187 @@ export const DoubtChatPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col h-[calc(100vh-4rem)]">
-        {/* Header */}
-        <div className="bg-white rounded-t-xl shadow-sm border-b border-gray-200 p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">AI Doubt Solver</h1>
-            <p className="text-sm text-gray-500">
-              Ask questions grounded in your course materials and notes
-            </p>
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Title */}
+      <div>
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+          AI Doubt Tutor (RAG)
+        </h1>
+        <p className="text-sm text-slate-500 mt-1">
+          Ask questions grounded in indexed study notes. Filtered with cosine similarity guardrails to prevent hallucination.
+        </p>
+      </div>
+
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Suggested Quick Questions */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs">
+        <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">
+          💡 Try Sample Queries
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {SUGGESTED_QUESTIONS.map((item, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => {
+                setSelectedSubjectId(item.subjectId);
+                handleAskDoubt(item.text, item.subjectId);
+              }}
+              className="text-xs px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-700 transition-colors cursor-pointer text-left"
+            >
+              {item.isOffTopic ? '⚠️ Off-Topic Guardrail: ' : ''}{item.text}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Chat Messages Stream */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs flex flex-col min-h-[480px]">
+        {/* Subject Header */}
+        <div className="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 rounded-t-2xl">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="text-xs font-semibold text-slate-700">RAG Knowledge Base Active</span>
           </div>
 
           <div className="flex items-center gap-2">
-            <label htmlFor="subject-select" className="text-sm font-medium text-gray-700 whitespace-nowrap">
-              Subject:
-            </label>
+            <label className="text-xs font-semibold text-slate-500">Subject Scope:</label>
             <select
-              id="subject-select"
               value={selectedSubjectId}
-              onChange={(e) => setSelectedSubjectId(Number(e.target.value))}
-              disabled={loading}
-              className="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2.5 disabled:opacity-60 disabled:cursor-not-allowed"
+              onChange={(e) => {
+                setSelectedSubjectId(Number(e.target.value));
+                setSelectedTopicId(undefined);
+              }}
+              className="text-xs font-semibold bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
-              {AVAILABLE_SUBJECTS.map((sub) => (
-                <option key={sub.id} value={sub.id}>
-                  {sub.name}
+              {AVAILABLE_SUBJECTS.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <label className="text-xs font-semibold text-slate-500">Topic:</label>
+            <select
+              value={selectedTopicId ?? ''}
+              onChange={(e) => setSelectedTopicId(e.target.value ? Number(e.target.value) : undefined)}
+              className="text-xs font-semibold bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">All subject notes</option>
+              {AVAILABLE_TOPICS.filter((topic) => topic.subjectId === selectedSubjectId).map((topic) => (
+                <option key={topic.id} value={topic.id}>
+                  {topic.name}
                 </option>
               ))}
             </select>
           </div>
         </div>
 
-        {/* Message List */}
-        <div className="flex-1 bg-white p-6 overflow-y-auto space-y-6">
-          {messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center text-gray-400 py-12">
-              <svg
-                className="w-16 h-16 mb-4 text-gray-300"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="1.5"
-                  d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-                />
-              </svg>
-              <h3 className="text-lg font-medium text-gray-700">No questions asked yet</h3>
-              <p className="text-sm text-gray-500 max-w-sm mt-1">
-                Select your subject above, type your query, and our AI will retrieve answers cited directly from course notes.
-              </p>
-            </div>
-          ) : (
-            messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
-              >
-                {/* Message Header */}
-                <div className="flex items-center gap-2 mb-1 px-1 text-xs text-gray-500">
-                  <span className="font-semibold text-gray-700">
-                    {msg.sender === 'user' ? 'You' : 'AI Study Assistant'}
-                  </span>
-                  <span>•</span>
-                  <span>{msg.subjectName}</span>
-                  <span>•</span>
-                  <span>{msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+        {/* Message Stream */}
+        <div className="flex-1 p-6 space-y-5 overflow-y-auto max-h-[520px]">
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`flex gap-3 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              {msg.sender === 'ai' && (
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 text-white flex items-center justify-center font-bold text-xs flex-shrink-0 mt-1 shadow-xs">
+                  AI
                 </div>
+              )}
 
-                {/* User Message Bubble */}
-                {msg.sender === 'user' ? (
-                  <div className="bg-indigo-600 text-white rounded-2xl rounded-tr-none px-4 py-3 max-w-xl text-sm shadow-sm whitespace-pre-wrap">
-                    {msg.text}
+              <div
+                className={`max-w-2xl rounded-2xl p-4 sm:p-5 text-sm ${
+                  msg.sender === 'user'
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/15'
+                    : 'bg-slate-50 border border-slate-200/90 text-slate-800'
+                }`}
+              >
+                {/* AI Metadata Tags */}
+                {msg.sender === 'ai' && msg.id !== 'welcome' && (
+                  <div className="flex flex-wrap items-center gap-2 mb-2 pb-2 border-b border-slate-200/60">
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider ${
+                        msg.confidence === 'high'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : 'bg-amber-100 text-amber-800 border border-amber-200'
+                      }`}
+                    >
+                      {msg.confidence === 'high' ? '✓ High Confidence Grounded' : '⚠️ Low Confidence / Guardrail Triggered'}
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-medium">Scope: {msg.subjectName}</span>
                   </div>
-                ) : (
-                  /* AI Answer Card */
-                  <div
-                    className={`max-w-2xl rounded-2xl rounded-tl-none p-5 shadow-sm border ${
-                      msg.confidence === 'high'
-                        ? 'bg-slate-50/70 border-slate-200 text-gray-800'
-                        : 'bg-amber-50/70 border-amber-200 text-amber-950'
-                    }`}
-                  >
-                    {/* Confidence Badge */}
-                    <div className="flex items-center justify-between gap-3 mb-2.5 pb-2 border-b border-gray-200/60">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            msg.confidence === 'high'
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                              : 'bg-amber-100 text-amber-800 border border-amber-300'
-                          }`}
-                        >
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              msg.confidence === 'high' ? 'bg-emerald-600' : 'bg-amber-600'
-                            }`}
-                          />
-                          {msg.confidence === 'high' ? 'High Confidence (Grounded)' : 'Low Confidence / Uncertain'}
+                )}
+
+                {/* Body Text */}
+                <div className="whitespace-pre-wrap leading-relaxed">{msg.text}</div>
+
+                {/* Sources Footer */}
+                {msg.sourceChunks && msg.sourceChunks.length > 0 && (
+                  <div className="mt-3 pt-2.5 border-t border-slate-200/60 flex items-center gap-2 text-xs text-slate-500">
+                    <span className="font-semibold text-slate-600">Retrieved Chunks:</span>
+                    <div className="flex flex-wrap gap-1">
+                      {msg.sourceChunks.map((chunkId, cIdx) => (
+                        <span key={cIdx} className="px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[11px] font-mono text-indigo-600">
+                          {chunkId}
                         </span>
-                      </div>
+                      ))}
                     </div>
-
-                    {/* Answer Text */}
-                    <div className="text-sm leading-relaxed whitespace-pre-wrap">
-                      {msg.text}
-                    </div>
-
-                    {/* Source Citations for Grounded Answers */}
-                    {msg.sourceChunks && msg.sourceChunks.length > 0 && (
-                      <div className="mt-3.5 pt-2.5 border-t border-gray-200/70 flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
-                        <span className="font-medium text-gray-600">Sources:</span>
-                        {msg.sourceChunks.map((chunkId, idx) => (
-                          <span
-                            key={idx}
-                            className="inline-block bg-white text-gray-600 px-2 py-0.5 rounded border border-gray-300 font-mono text-[11px]"
-                          >
-                            {chunkId}
-                          </span>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
-            ))
-          )}
 
-          {/* Loading Indicator */}
-          {loading && (
-            <div className="flex flex-col items-start space-y-2">
-              <div className="flex items-center gap-2 px-1 text-xs text-gray-500">
-                <span className="font-semibold text-gray-700">AI Study Assistant</span>
-                <span>•</span>
-                <span>Searching knowledge base & synthesizing answer...</span>
-              </div>
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl rounded-tl-none p-4 flex items-center gap-3 text-sm text-gray-600 shadow-sm">
-                <div className="animate-spin rounded-full h-5 w-5 border-2 border-indigo-600 border-t-transparent"></div>
-                <span>Retrieving course notes and reasoning...</span>
-              </div>
+              {msg.sender === 'user' && (
+                <div className="w-8 h-8 rounded-xl bg-slate-800 text-white flex items-center justify-center font-bold text-xs flex-shrink-0 mt-1 shadow-xs">
+                  U
+                </div>
+              )}
             </div>
-          )}
+          ))}
 
-          {/* Error Alert */}
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
-              <span>{error}</span>
-              <button
-                onClick={() => setError(null)}
-                className="text-red-500 hover:text-red-700 font-bold ml-4"
-              >
-                ✕
-              </button>
+          {loading && (
+            <div className="flex gap-3 justify-start">
+              <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-xs flex-shrink-0 animate-pulse">
+                AI
+              </div>
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-xs text-slate-500 flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-indigo-600 animate-ping"></div>
+                Searching ChromaDB vector store and reasoning answer...
+              </div>
             </div>
           )}
         </div>
 
-        {/* Input Form */}
-        <div className="bg-white rounded-b-xl shadow-sm border-t border-gray-200 p-4">
-          <form onSubmit={handleAskDoubt} className="flex gap-3">
+        {/* Input Bar */}
+        <div className="p-4 border-t border-slate-100 bg-white rounded-b-2xl">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleAskDoubt(question, selectedSubjectId);
+            }}
+            className="flex items-center gap-3"
+          >
             <input
               type="text"
+              placeholder="Ask a question grounded in course notes..."
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               disabled={loading}
-              placeholder={
-                loading
-                  ? 'Waiting for AI response...'
-                  : 'Ask a question (e.g. "What does the discriminant tell us about quadratic roots?")...'
-              }
-              className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className="flex-1 px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
             <button
               type="submit"
               disabled={loading || !question.trim()}
-              className="bg-indigo-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm shadow-md shadow-indigo-600/20 disabled:opacity-50 transition-all cursor-pointer flex items-center gap-1.5"
             >
-              {loading ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                  <span>Thinking...</span>
-                </>
-              ) : (
-                'Ask Doubt'
-              )}
+              <span>Send</span>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+              </svg>
             </button>
           </form>
         </div>

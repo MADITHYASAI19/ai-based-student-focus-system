@@ -35,6 +35,7 @@ def calculate_focus_score(session: StudySession) -> float:
         "away": 20.0,
         "sleepy": 10.0,
         "tab_switch": 5.0,
+        "fullscreen_exit": 5.0,
     }
     total_penalty = sum(
         penalties.get(event.event_type, 5.0) for event in session.focus_events

@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Text, JSON
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from app.core.database import Base
 
@@ -80,6 +80,29 @@ class Topic(Base):
     # Relationships
     subject: Mapped["Subject"] = relationship("Subject", back_populates="topics")
     plan_items: Mapped[list["PlanItem"]] = relationship("PlanItem", back_populates="topic")
+    documents: Mapped[list["StudyDocument"]] = relationship("StudyDocument", back_populates="topic", cascade="all, delete-orphan")
+
+
+class StudyDocument(Base):
+    __tablename__ = "study_documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    topic_id: Mapped[int] = mapped_column(Integer, ForeignKey("topics.id"), nullable=False, index=True)
+    uploaded_by: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    filename: Mapped[str] = mapped_column(String, nullable=False)
+    stored_path: Mapped[str] = mapped_column(String, nullable=False)
+    content_type: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="processing")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    concepts: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    difficulty: Mapped[str | None] = mapped_column(String, nullable=True)
+    difficulty_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    estimated_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    topic: Mapped["Topic"] = relationship("Topic", back_populates="documents")
+    uploader: Mapped["User"] = relationship("User")
 
 
 class StudyPlan(Base):
@@ -110,6 +133,10 @@ class PlanItem(Base):
     study_plan: Mapped["StudyPlan"] = relationship("StudyPlan", back_populates="plan_items")
     topic: Mapped["Topic"] = relationship("Topic", back_populates="plan_items")
     study_sessions: Mapped[list["StudySession"]] = relationship("StudySession", back_populates="plan_item")
+
+    @property
+    def topic_name(self) -> str:
+        return self.topic.name
 
 
 class StudySession(Base):
