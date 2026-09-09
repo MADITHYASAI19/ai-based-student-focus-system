@@ -11,6 +11,7 @@ from ai_service.generation.quiz_gen import (
     _parse_questions,
     generate_quiz,
     make_cache_key,
+    QuizGenerationError,
 )
 from app.schemas.quiz import QuizQuestion
 
@@ -134,7 +135,7 @@ def test_generate_quiz_raises_after_two_failures(mock_get_client):
     ]
     mock_get_client.return_value = mock_client
 
-    with pytest.raises(ValueError, match="failed after 2 attempts"):
+    with pytest.raises(QuizGenerationError, match="failed after 2 attempts"):
         generate_quiz("Queues", "hard", n_questions=3)
 
     assert mock_client.chat.completions.create.call_count == 2

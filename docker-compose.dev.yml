@@ -1,0 +1,40 @@
+# =============================================================================
+# docker-compose.dev.yml  ─  LOCAL DEVELOPMENT STACK
+# =============================================================================
+# Lightweight companion for local development.
+# The app itself is NOT containerised here — run it directly with uvicorn
+# (see README.md) so hot-reload and debuggers work without friction.
+#
+# What this provides:
+#   - ChromaDB server (optional — only needed when CHROMA_MODE=http)
+#     The default dev mode uses CHROMA_MODE=embedded (PersistentClient),
+#     so you usually don't need to start this at all.
+#
+# SQLite and the in-process cachetools cache require zero Docker services.
+#
+# Usage (only if you want to test the HTTP Chroma path locally):
+#   docker compose -f docker-compose.dev.yml up -d
+#   # Then set CHROMA_MODE=http and CHROMA_URL=http://localhost:8001 in .env
+# =============================================================================
+
+version: '3.9'
+
+services:
+  # ---------------------------------------------------------------------------
+  # ChromaDB — only needed when CHROMA_MODE=http
+  # Typically left stopped in dev (CHROMA_MODE=embedded is the default).
+  # ---------------------------------------------------------------------------
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: study_companion_chroma_dev
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_dev_data:/chroma/chroma
+    environment:
+      CHROMA_SERVER_HOST: "0.0.0.0"
+      CHROMA_SERVER_PORT: "8000"
+
+volumes:
+  chroma_dev_data:
+    driver: local

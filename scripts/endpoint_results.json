@@ -1,0 +1,82 @@
+[
+  [
+    "GET",
+    "/health",
+    "No",
+    "curl -X GET http://localhost:8000/health",
+    "{\"status\":\"ok\"}",
+    "200 OK"
+  ],
+  [
+    "POST",
+    "/api/auth/register",
+    "No",
+    "curl -X POST http://localhost:8000/api/auth/register -H \"Content-Type: application/json\" -d '{\"email\":\"report_user_f31874@test.local\",\"password\":\"SecurePassword123!\",\"name\":\"Audit User\",\"role\":\"student\"}'",
+    "{\"id\":14,\"email\":\"report_user_f31874@test.local\",\"name\":\"Audit User\",\"role\":\"student\",\"grade_level\":null,\"target_exam\":null,\"parent_id\":null,\"created_at\":\"2026-09-09T05:32:36.827499\"}",
+    "201 Created"
+  ],
+  [
+    "POST",
+    "/api/auth/login",
+    "No",
+    "curl -X POST http://localhost:8000/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"report_user_f31874@test.local\",\"password\":\"SecurePassword123!\"}'",
+    "{\"access_token\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxNCIsImVtYWlsIjoicmVwb3J0X3VzZXJfZjMxODc0QHRlc3QubG9jYWwiLCJleHAiOjE3ODg5MzM3NTl9.hPHa_d-yDBY9vMxeMJbA9laXeWe8QP74C9wlEkAnHXA\",\"token_type\":\"bearer\"}",
+    "200 OK"
+  ],
+  [
+    "POST",
+    "/api/plans",
+    "Yes",
+    "curl -X POST http://localhost:8000/api/plans -H \"Authorization: Bearer <JWT>\" -H \"Content-Type: application/json\" -d '{\"exam_deadline\":\"2027-06-01T00:00:00\",\"items\":[{\"topic_id\":1,\"duration_minutes\":60}]}'",
+    "{\"id\":8,\"student_id\":14,\"exam_deadline\":\"2027-06-01T00:00:00\",\"status\":\"pending\",\"generated_at\":\"2026-09-09T05:32:41.205599\",\"items\":[{\"id\":7,\"plan_id\":8,\"topic_id\":1,\"scheduled_date\":null,\"duration_minutes\":60,\"status\":\"pending\"}]}",
+    "201 Created"
+  ],
+  [
+    "GET",
+    "/api/plans/{student_id}",
+    "Yes",
+    "curl -X GET http://localhost:8000/api/plans/14 -H \"Authorization: Bearer <JWT>\"",
+    "{\"id\":8,\"student_id\":14,\"exam_deadline\":\"2027-06-01T00:00:00\",\"status\":\"pending\",\"generated_at\":\"2026-09-09T05:32:41.205599\",\"items\":[{\"id\":7,\"plan_id\":8,\"topic_id\":1,\"scheduled_date\":null,\"duration_minutes\":60,\"status\":\"pending\"}]}",
+    "200 OK"
+  ],
+  [
+    "POST",
+    "/api/sessions/start",
+    "Yes",
+    "curl -X POST http://localhost:8000/api/sessions/start -H \"Authorization: Bearer <JWT>\" -H \"Content-Type: application/json\" -d '{}'",
+    "{\"id\":10,\"student_id\":14,\"plan_item_id\":null,\"started_at\":\"2026-09-09T05:32:45.305915\",\"ended_at\":null,\"focus_score\":null,\"productivity_score\":null}",
+    "201 Created"
+  ],
+  [
+    "PATCH",
+    "/api/sessions/{session_id}/end",
+    "Yes",
+    "curl -X PATCH http://localhost:8000/api/sessions/10/end -H \"Authorization: Bearer <JWT>\"",
+    "{\"id\":10,\"student_id\":14,\"plan_item_id\":null,\"started_at\":\"2026-09-09T05:32:45.305915\",\"ended_at\":\"2026-09-09T05:32:47.335730\",\"focus_score\":100.0,\"productivity_score\":100.0}",
+    "200 OK"
+  ],
+  [
+    "GET",
+    "/api/quizzes/{topic_id}",
+    "Yes",
+    "curl -X GET 'http://localhost:8000/api/quizzes/1?difficulty=medium' -H \"Authorization: Bearer <JWT>\"",
+    "{\"topic_id\":1,\"difficulty\":\"medium\",\"questions\":[{\"id\":null,\"question_text\":\"What is the average-case time complexity of searching for a key in a balanced binary search tree with n nodes?\",\"type\":\"mcq\",\"options\":[\"O(log n)\",\"O(n)\",\"O(n log n)\",\"O(1)\"],\"correct_answer\":\"O(log n)\"},{\"id\":null,\"question_text\":\"In a binary search tree, which statement about an inorder traversal is correct?\",\"type\":\"mcq\",\"options\":[\"It visits the nodes in ascending key order\",\"It visits the nodes in descending key order\",\"It visits the nodes level by level\",\"It visits the nodes in the order they were inserted\"],\"correct_answer\":\"It visits the nodes in ascending key order\"},{\"id\":null,\"question_text\":\"For a node X in a BST with left child L and right child R, which relationship must always hold among their keys?\",\"type\":\"mcq\",\"options\":[\"L < X < R\",\"L > X > R\",\"L < X and R < X\",\"L > X and R > X\"],\"correct_answer\":\"L < X < R\"},{\"id\":null,\"question_text\":\"When deleting a node that has two children in a BST, which node is most commonly used to replace it?\",\"type\":\"mcq\",\"options\":[\"The node's inorder successor\",\"The node's inorder predecessor\",\"The node's leftmost descendant\",\"The node's rightmost descendant\"],\"correct_answer\":\"The node's inorder successor\"},{\"id\":null,\"question_text\":\"Explain why inserting keys in sorted order can cause a binary search tree to become unbalanced and how this affects operation complexities.\",\"type\":\"short_answer\",\"options\":null,\"correct_answer\":\"Inserting keys in sorted order creates a degenerate tree that resembles a linked list, making one side much deeper than the other; as a result, search, insert, and delete operations degrade from O(log n) to O(n) in the worst case.\"}]}",
+    "200 OK"
+  ],
+  [
+    "POST",
+    "/api/quizzes/{quiz_id}/attempt",
+    "Yes",
+    "curl -X POST http://localhost:8000/api/quizzes/1/attempt -H \"Authorization: Bearer <JWT>\" -H \"Content-Type: application/json\" -d '{\"answers\":{\"0\":\"O(log n)\",\"1\":\"test\"}}'",
+    "{\"id\":5,\"student_id\":14,\"quiz_id\":1,\"score\":20.0,\"completed_at\":\"2026-09-09T05:32:51.414304\"}",
+    "201 Created"
+  ],
+  [
+    "POST",
+    "/api/doubts",
+    "Yes",
+    "curl -X POST http://localhost:8000/api/doubts -H \"Authorization: Bearer <JWT>\" -H \"Content-Type: application/json\" -d '{\"question\":\"What is the quadratic formula?\",\"subject_id\":1}'",
+    "{\"answer_text\":\"The quadratic formula gives the solutions of\u202fax\u00b2\u202f+\u202fbx\u202f+\u202fc\u202f=\u202f0 as  \\n\\n\\\\[\\nx = \\\\frac{-b \\\\pm \\\\sqrt{\\\\,b^{2}-4ac\\\\,}}{2a}\\n\\\\]  \\n\\n[Chunk\u202f1]\",\"source_chunk_ids\":[\"math_notes_0\",\"math_notes_1\",\"physics_notes_0\"],\"confidence\":\"high\"}",
+    "200 OK"
+  ]
+]

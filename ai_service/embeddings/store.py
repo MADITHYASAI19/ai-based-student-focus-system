@@ -8,6 +8,8 @@ from functools import lru_cache
 import chromadb
 from dotenv import load_dotenv
 
+from .embed import embed_chunks
+
 
 @lru_cache(maxsize=1)
 def _get_client():
@@ -81,8 +83,6 @@ def query(collection_name: str, query_text: str, top_k: int = 5) -> list[dict[st
         raise ValueError("top_k must be at least 1")
 
     collection = _get_collection(collection_name)
-    # Lazy import to avoid circular dependency
-    from .embed import embed_chunks
     query_embedding = embed_chunks([query_text])[0]
     response = collection.query(
         query_embeddings=[query_embedding],
