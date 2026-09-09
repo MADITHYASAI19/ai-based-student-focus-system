@@ -1,12 +1,8 @@
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
+from app.core.config import get_settings
 
 DEFAULT_MODEL_NAME = "openai/gpt-oss-120b"
 
 
 def get_model_name() -> str:
-    """Return the LLM model name from LLM_MODEL_NAME env var, defaulting to openai/gpt-oss-120b."""
-    load_dotenv()
-    return os.getenv("LLM_MODEL_NAME", DEFAULT_MODEL_NAME)
+    """Return the configured model name from the central settings object."""
+    return get_settings().LLM_MODEL_NAME

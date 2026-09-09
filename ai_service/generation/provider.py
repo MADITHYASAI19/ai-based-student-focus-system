@@ -1,27 +1,24 @@
 """Replaceable OpenAI-compatible AI provider for Grok/Groq and local testing."""
 
-import os
 from functools import lru_cache
 
-from dotenv import load_dotenv
 from openai import OpenAI
 
-from ai_service.config import get_model_name
+from app.core.config import get_settings
 
 
 @lru_cache(maxsize=1)
 def get_ai_client() -> OpenAI:
-    load_dotenv()
-    api_key = os.getenv("AI_API_KEY")
+    settings = get_settings()
+    api_key = settings.AI_API_KEY
     if not api_key:
         raise ValueError("AI_API_KEY environment variable is not set")
-    base_url = os.getenv("AI_API_BASE_URL", "https://api.groq.com/openai/v1")
-    return OpenAI(api_key=api_key, base_url=base_url, timeout=45.0)
+    return OpenAI(api_key=api_key, base_url=settings.AI_API_BASE_URL, timeout=45.0)
 
 
 def complete_json(messages: list[dict[str, str]]) -> str:
     response = get_ai_client().chat.completions.create(
-        model=get_model_name(),
+        model=get_settings().LLM_MODEL_NAME,
         messages=messages,
         temperature=0.1,
         response_format={"type": "json_object"},
@@ -32,7 +29,7 @@ def complete_json(messages: list[dict[str, str]]) -> str:
 
 def complete_text(messages: list[dict[str, str]]) -> str:
     response = get_ai_client().chat.completions.create(
-        model=get_model_name(),
+        model=get_settings().LLM_MODEL_NAME,
         messages=messages,
         temperature=0.3,
         timeout=45.0,

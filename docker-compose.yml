@@ -97,6 +97,7 @@ services:
       CHROMA_URL: http://chroma:8000
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       AI_API_KEY: ${AI_API_KEY}
+      AI_API_BASE_URL: ${AI_API_BASE_URL:-https://api.groq.com/openai/v1}
       LLM_MODEL_NAME: ${LLM_MODEL_NAME:-openai/gpt-oss-120b}
     ports:
       - "8000:8000"
