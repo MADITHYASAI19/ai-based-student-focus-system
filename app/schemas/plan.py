@@ -47,3 +47,31 @@ class StudyPlanOut(BaseModel):
     status: str
     generated_at: datetime
     items: list[PlanItemOut] = Field(validation_alias="plan_items")
+
+
+class TopicBreakdownRequest(BaseModel):
+    raw_text: str
+
+
+class TopicConcept(BaseModel):
+    topic_name: str
+    duration_minutes: int
+
+
+class TopicBreakdownResponse(BaseModel):
+    topics: list[TopicConcept]
+
+
+class ItemStatusUpdate(BaseModel):
+    status: str  # pending | done | skipped
+
+
+class TopicExplainRequest(BaseModel):
+    topic_name: str
+    mode: str = "average"  # child | average | topper
+
+
+class TopicExplainResponse(BaseModel):
+    topic_name: str
+    explanation: str
+

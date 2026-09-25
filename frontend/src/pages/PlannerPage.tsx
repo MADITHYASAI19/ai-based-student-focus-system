@@ -1,18 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePlan } from '../hooks/usePlan';
-import { estimateTopic, getTopicDocuments, uploadTopicDocument } from '../api/client';
-import type { StudyDocument, StudyPlanCreate } from '../api/types';
+import { breakdownTopics, getTopicDocuments, uploadTopicDocument } from '../api/client';
+import type { StudyDocument, StudyPlanCreate, TopicConcept } from '../api/types';
 
 export const PlannerPage: React.FC = () => {
   const { plan, loading, error, hasPlan, createPlan } = usePlan();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [examDeadline, setExamDeadline] = useState('');
-  const [topicName, setTopicName] = useState('');
-  const [durationMinutes, setDurationMinutes] = useState<number>(45);
-  const [studyFile, setStudyFile] = useState<File | null>(null);
-  const [estimateLoading, setEstimateLoading] = useState(false);
-  const [estimateReason, setEstimateReason] = useState('');
+  const [rawTopicsText, setRawTopicsText] = useState('');
+  const [generatedTopics, setGeneratedTopics] = useState<TopicConcept[]>([]);
+  const [isGeneratingTopics, setIsGeneratingTopics] = useState(false);
   const [creating, setCreating] = useState(false);
   const [documentsByTopic, setDocumentsByTopic] = useState<Record<number, StudyDocument[]>>({});
   const [uploadingTopicId, setUploadingTopicId] = useState<number | null>(null);
@@ -27,59 +25,42 @@ export const PlannerPage: React.FC = () => {
       .catch((err) => console.error('Failed to load topic documents:', err));
   }, [plan?.id]);
 
+  const handleGenerateTopics = async () => {
+    if (!rawTopicsText.trim()) return;
+    setIsGeneratingTopics(true);
+    try {
+      const res = await breakdownTopics(rawTopicsText.trim());
+      setGeneratedTopics(res.topics || []);
+    } catch (err) {
+      console.error(err);
+      setDocumentMessage({ type: 'error', text: 'Failed to generate topics from your input.' });
+    } finally {
+      setIsGeneratingTopics(false);
+    }
+  };
+
   const handleCreatePlan = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!topicName.trim()) return;
+    if (generatedTopics.length === 0) return;
     setCreating(true);
 
     try {
       const planData: StudyPlanCreate = {
         exam_deadline: examDeadline ? new Date(examDeadline).toISOString() : new Date(Date.now() + 14 * 86400000).toISOString(),
-        items: [
-          {
-            topic_name: topicName.trim(),
-            duration_minutes: durationMinutes,
-          },
-        ],
+        items: generatedTopics.map((t) => ({
+          topic_name: t.topic_name,
+          duration_minutes: t.duration_minutes,
+        })),
       };
-      const newPlan = await createPlan(planData);
-      const createdTopicId = newPlan.items[0]?.topic_id;
-      if (studyFile && createdTopicId) {
-        try {
-          const document = await uploadTopicDocument(createdTopicId, studyFile);
-          setDocumentsByTopic((current) => ({
-            ...current,
-            [createdTopicId]: [document, ...(current[createdTopicId] ?? [])],
-          }));
-          setDocumentMessage({ type: 'success', text: `${document.filename} was stored and processed successfully.` });
-        } catch (uploadError: any) {
-          const detail = uploadError.response?.data?.detail || 'The plan was saved, but the document could not be processed.';
-          setDocumentMessage({ type: 'error', text: detail });
-        }
-      }
-      setTopicName('');
-      setStudyFile(null);
+      await createPlan(planData);
+      setRawTopicsText('');
+      setGeneratedTopics([]);
       setShowCreateForm(false);
+      setDocumentMessage({ type: 'success', text: 'Study plan created successfully.' });
     } catch (err: any) {
       setDocumentMessage({ type: 'error', text: err.response?.data?.detail || 'Failed to create the study plan.' });
     } finally {
       setCreating(false);
-    }
-  };
-
-  const generateEstimate = async (name: string, file?: File) => {
-    if (!name.trim()) return;
-    setEstimateLoading(true);
-    try {
-      const estimate = await estimateTopic(name.trim(), file);
-      const estimatedMinutes = Math.max(10, Math.min(240, Math.round((estimate.estimated_hours * 60) / 10) * 10));
-      setDurationMinutes(estimatedMinutes);
-      setEstimateReason(`${estimate.difficulty} difficulty: ${estimate.difficulty_reason}`);
-    } catch (err) {
-      console.error('Failed to generate AI estimate:', err);
-      setEstimateReason('AI estimate unavailable. Please try again.');
-    } finally {
-      setEstimateLoading(false);
     }
   };
 
@@ -211,67 +192,40 @@ export const PlannerPage: React.FC = () => {
           </div>
 
           <form onSubmit={handleCreatePlan} className="space-y-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Topic name
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={topicName}
-                  onChange={(e) => setTopicName(e.target.value)}
-                  onBlur={() => void generateEstimate(topicName, studyFile ?? undefined)}
-                  placeholder="e.g. Organic chemistry basics"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Duration (Minutes)
-                </label>
-                <input
-                  type="number"
-                  min="10"
-                  max="240"
-                  value={durationMinutes}
-                  onChange={(e) => setDurationMinutes(Math.max(10, Math.min(240, Number(e.target.value) || 10)))}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                />
-              </div>
-            </div>
-
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                Study document (optional)
+                Give me all the topics you want to study
               </label>
-              <input
-                type="file"
-                accept=".pdf,.txt,.text,application/pdf,text/plain"
-                onChange={(e) => {
-                  const file = e.target.files?.[0] ?? null;
-                  setStudyFile(file);
-                  if (file && topicName.trim()) void generateEstimate(topicName, file);
-                }}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-700 text-sm file:mr-3 file:border-0 file:bg-indigo-50 file:text-indigo-700 file:font-semibold file:px-3 file:py-1.5 file:rounded-lg"
+              <textarea
+                required
+                value={rawTopicsText}
+                onChange={(e) => setRawTopicsText(e.target.value)}
+                placeholder="e.g. I want to study organic chemistry basics, specifically alkanes and alkenes, and also some basic biology..."
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm h-32"
               />
-              <p className="text-xs text-slate-400 mt-1.5">The AI will use this document to estimate the study time, then process it after confirmation.</p>
+              <button
+                type="button"
+                onClick={handleGenerateTopics}
+                disabled={isGeneratingTopics || !rawTopicsText.trim()}
+                className="mt-2 px-4 py-2 text-xs font-semibold rounded-lg bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50"
+              >
+                {isGeneratingTopics ? 'Analyzing...' : 'Generate Clean Topics'}
+              </button>
             </div>
 
-            <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-bold text-slate-900">Approximate study time</p>
-                  <p className="text-xs text-slate-500 mt-1">{estimateLoading ? 'AI is estimating the topic...' : estimateReason || 'Enter a topic name or choose a document to generate an AI estimate.'}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => setDurationMinutes((minutes) => Math.max(10, minutes - 10))} className="px-3 py-2 rounded-lg border border-indigo-200 bg-white text-xs font-bold text-indigo-700 hover:bg-indigo-100">-10 min</button>
-                  <span className="min-w-20 text-center text-lg font-extrabold text-indigo-700">{durationMinutes} min</span>
-                  <button type="button" onClick={() => setDurationMinutes((minutes) => Math.min(240, minutes + 10))} className="px-3 py-2 rounded-lg border border-indigo-200 bg-white text-xs font-bold text-indigo-700 hover:bg-indigo-100">+10 min</button>
+            {generatedTopics.length > 0 && (
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
+                <p className="text-sm font-bold text-slate-900 mb-3">Total Concepts Detected: {generatedTopics.length}</p>
+                <div className="space-y-2">
+                  {generatedTopics.map((topic, i) => (
+                    <div key={i} className="flex justify-between items-center text-sm bg-white p-2 rounded-lg border border-indigo-100">
+                      <span className="font-semibold text-slate-700">{topic.topic_name}</span>
+                      <span className="text-indigo-600 font-bold">{topic.duration_minutes} min</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
+            )}
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">

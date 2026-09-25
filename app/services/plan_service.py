@@ -65,3 +65,31 @@ def create_plan(
 def get_plan(db: Session, student_id: int) -> StudyPlan | None:
     """Return the study plan belonging to the supplied student ID, if any."""
     return db.query(StudyPlan).filter(StudyPlan.student_id == student_id).first()
+
+
+def get_all_plans_for_student(db: Session, student_id: int) -> list[StudyPlan]:
+    """Return all study plans for the given student, newest first."""
+    return (
+        db.query(StudyPlan)
+        .filter(StudyPlan.student_id == student_id)
+        .order_by(StudyPlan.generated_at.desc())
+        .all()
+    )
+
+
+def update_item_status(db: Session, item_id: int, student_id: int, new_status: str) -> PlanItem | None:
+    """Update the status of a plan item. Returns None if not found / not owned."""
+    from sqlalchemy.orm import joinedload
+    item = (
+        db.query(PlanItem)
+        .join(PlanItem.study_plan)
+        .filter(PlanItem.id == item_id, StudyPlan.student_id == student_id)
+        .first()
+    )
+    if not item:
+        return None
+    item.status = new_status
+    db.commit()
+    db.refresh(item)
+    return item
+

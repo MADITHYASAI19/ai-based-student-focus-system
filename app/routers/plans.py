@@ -3,11 +3,48 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.deps import get_current_user
-from app.models.models import StudyPlan, User
-from app.schemas.plan import StudyPlanCreate, StudyPlanOut
-from app.services.plan_service import create_plan, get_plan
+from app.models.models import StudyPlan, User, PlanItem
+from app.schemas.plan import (
+    StudyPlanCreate,
+    StudyPlanOut,
+    TopicBreakdownRequest,
+    TopicBreakdownResponse,
+    ItemStatusUpdate,
+    TopicExplainRequest,
+    TopicExplainResponse,
+    PlanItemOut,
+)
+from app.services.plan_service import create_plan, get_plan, update_item_status
+from ai_service.generation.plan_gen import generate_topic_breakdown
+from ai_service.generation.topic_explainer import generate_topic_explanation
 
 router = APIRouter()
+
+
+@router.post("/breakdown", response_model=TopicBreakdownResponse)
+def breakdown_topics(
+    request: TopicBreakdownRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Break down a raw text into study concepts/topics."""
+    try:
+        topics = generate_topic_breakdown(request.raw_text)
+        return TopicBreakdownResponse(topics=topics)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/explain", response_model=TopicExplainResponse)
+def explain_topic(
+    request: TopicExplainRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Generate a detailed explanation of a topic for the authenticated student."""
+    try:
+        explanation = generate_topic_explanation(request.topic_name, request.mode)
+        return TopicExplainResponse(topic_name=request.topic_name, explanation=explanation)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("", response_model=list[StudyPlanOut])
@@ -40,6 +77,26 @@ def create_study_plan(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.patch("/items/{item_id}/status", response_model=PlanItemOut)
+def update_plan_item_status(
+    item_id: int,
+    update: ItemStatusUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update the status of a specific plan item (pending/done/skipped)."""
+    allowed = {"pending", "done", "skipped"}
+    if update.status not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Status must be one of {sorted(allowed)}",
+        )
+    item = update_item_status(db=db, item_id=item_id, student_id=current_user.id, new_status=update.status)
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan item not found")
+    return item
 
 
 @router.get("/{student_id}", response_model=StudyPlanOut)

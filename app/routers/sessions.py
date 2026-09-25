@@ -3,12 +3,30 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.deps import get_current_user
-from app.models.models import User
+from app.models.models import User, StudySession
 from app.schemas.session import FocusEventCreate, StudySessionOut, StudySessionStart
 from app.models.models import FocusEvent
 from app.services.session_service import end_session, get_session, start_session
 
 router = APIRouter()
+
+
+@router.get("", response_model=list[StudySessionOut])
+def get_session_history(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return all completed sessions for the authenticated user, newest first."""
+    return (
+        db.query(StudySession)
+        .filter(
+            StudySession.student_id == current_user.id,
+            StudySession.ended_at.isnot(None),
+        )
+        .order_by(StudySession.started_at.desc())
+        .all()
+    )
+
 
 
 @router.post("/start", response_model=StudySessionOut, status_code=status.HTTP_201_CREATED)

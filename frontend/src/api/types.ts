@@ -177,3 +177,30 @@ export interface DoubtAnswer {
   source_chunk_ids: string[];
   confidence: 'high' | 'low';
 }
+
+export interface TopicBreakdownRequest {
+  raw_text: string;
+}
+
+export interface TopicConcept {
+  topic_name: string;
+  duration_minutes: number;
+}
+
+export interface TopicBreakdownResponse {
+  topics: TopicConcept[];
+}
+
+export interface ItemStatusUpdate {
+  status: 'pending' | 'done' | 'skipped';
+}
+
+export interface TopicExplainRequest {
+  topic_name: string;
+  mode: 'child' | 'average' | 'topper';
+}
+
+export interface TopicExplainResponse {
+  topic_name: string;
+  explanation: string;
+}

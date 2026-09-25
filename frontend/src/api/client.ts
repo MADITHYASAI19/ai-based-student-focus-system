@@ -16,7 +16,12 @@ import type {
   Profile,
   StudyDocument,
   TopicEstimate,
+  TopicBreakdownResponse,
+  TopicExplainRequest,
+  TopicExplainResponse,
+  PlanItemOut,
 } from './types';
+
 
 // NOTE: Token storage in localStorage is a known simplification.
 // TODO: Harden with httpOnly cookies for production.
@@ -123,6 +128,11 @@ export const explainDocumentSubtopic = async (documentId: number, subtopic: stri
   return response.data;
 };
 
+export const breakdownTopics = async (raw_text: string): Promise<TopicBreakdownResponse> => {
+  const response = await apiClient.post<TopicBreakdownResponse>('/api/plans/breakdown', { raw_text });
+  return response.data;
+};
+
 export const createPlan = async (data: StudyPlanCreate): Promise<StudyPlanOut> => {
   const response = await apiClient.post<StudyPlanOut>('/api/plans', data);
   return response.data;
@@ -165,5 +175,23 @@ export const submitQuizAttempt = async (
 // Doubt endpoint
 export const askDoubt = async (data: DoubtRequest): Promise<DoubtAnswer> => {
   const response = await apiClient.post<DoubtAnswer>('/api/doubts', data);
+  return response.data;
+};
+
+// Session history
+export const getSessionHistory = async (): Promise<StudySessionOut[]> => {
+  const response = await apiClient.get<StudySessionOut[]>('/api/sessions');
+  return response.data;
+};
+
+// Topic explanation
+export const explainTopic = async (data: TopicExplainRequest): Promise<TopicExplainResponse> => {
+  const response = await apiClient.post<TopicExplainResponse>('/api/plans/explain', data);
+  return response.data;
+};
+
+// Update plan item status
+export const updatePlanItemStatus = async (itemId: number, newStatus: 'pending' | 'done' | 'skipped'): Promise<PlanItemOut> => {
+  const response = await apiClient.patch<PlanItemOut>(`/api/plans/items/${itemId}/status`, { status: newStatus });
   return response.data;
 };
