@@ -1,29 +1,32 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePlan } from '../hooks/usePlan';
-import { breakdownTopics, getTopicDocuments, uploadTopicDocument } from '../api/client';
-import type { StudyDocument, StudyPlanCreate, TopicConcept } from '../api/types';
+import { breakdownTopics, updatePlanItemStatus, getAllPlans } from '../api/client';
+import type { StudyPlanCreate, TopicConcept } from '../api/types';
 
 export const PlannerPage: React.FC = () => {
-  const { plan, loading, error, hasPlan, createPlan } = usePlan();
+  const { plan, loading, error, hasPlan, createPlan, refetch } = usePlan();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [examDeadline, setExamDeadline] = useState('');
   const [rawTopicsText, setRawTopicsText] = useState('');
   const [generatedTopics, setGeneratedTopics] = useState<TopicConcept[]>([]);
   const [isGeneratingTopics, setIsGeneratingTopics] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [documentsByTopic, setDocumentsByTopic] = useState<Record<number, StudyDocument[]>>({});
-  const [uploadingTopicId, setUploadingTopicId] = useState<number | null>(null);
   const [documentMessage, setDocumentMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [markingItem, setMarkingItem] = useState<number | null>(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const topicIds = [...new Set((plan?.items ?? []).map((item) => item.topic_id))];
-    if (!topicIds.length) return;
-    Promise.all(topicIds.map(async (topicId) => [topicId, await getTopicDocuments(topicId)] as const))
-      .then((entries) => setDocumentsByTopic(Object.fromEntries(entries)))
-      .catch((err) => console.error('Failed to load topic documents:', err));
-  }, [plan?.id]);
+  const handleMarkItemStatus = async (itemId: number, newStatus: 'done' | 'pending' | 'skipped') => {
+    setMarkingItem(itemId);
+    try {
+      await updatePlanItemStatus(itemId, newStatus);
+      refetch();
+    } catch (err) {
+      setDocumentMessage({ type: 'error', text: 'Failed to update topic status.' });
+    } finally {
+      setMarkingItem(null);
+    }
+  };
 
   const handleGenerateTopics = async () => {
     if (!rawTopicsText.trim()) return;
@@ -81,25 +84,12 @@ export const PlannerPage: React.FC = () => {
     );
   }
 
+
+
   const items = plan?.items || [];
   const totalDuration = items.reduce((acc, curr) => acc + curr.duration_minutes, 0);
-
-  const handleDocumentUpload = async (topicId: number, file: File) => {
-    setUploadingTopicId(topicId);
-    setDocumentMessage(null);
-    try {
-      const document = await uploadTopicDocument(topicId, file);
-      setDocumentsByTopic((current) => ({
-        ...current,
-        [topicId]: [document, ...(current[topicId] ?? [])],
-      }));
-      setDocumentMessage({ type: 'success', text: `${document.filename} was stored and processed successfully.` });
-    } catch (err: any) {
-      setDocumentMessage({ type: 'error', text: err.response?.data?.detail || 'The document could not be stored.' });
-    } finally {
-      setUploadingTopicId(null);
-    }
-  };
+  const doneCount = items.filter((i) => i.status === 'done').length;
+  const progressPct = items.length ? Math.round((doneCount / items.length) * 100) : 0;
 
   return (
     <div className="space-y-8">
@@ -132,47 +122,63 @@ export const PlannerPage: React.FC = () => {
 
       {/* Overview Stats */}
       {hasPlan && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Topics</p>
-              <p className="text-2xl font-extrabold text-slate-900">{items.length}</p>
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Topics</p>
+                <p className="text-2xl font-extrabold text-slate-900">{items.length}</p>
+              </div>
             </div>
 
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Planned Duration</p>
+                <p className="text-2xl font-extrabold text-slate-900">{totalDuration} mins</p>
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center font-bold">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Target Exam</p>
+                <p className="text-sm font-bold text-slate-900 truncate max-w-[170px]">
+                  {plan?.exam_deadline ? new Date(plan.exam_deadline).toLocaleDateString() : 'Upcoming'}
+                </p>
+              </div>
+            </div>
           </div>
 
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+          {/* Progress bar */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-bold text-slate-700">Plan Progress</p>
+              <span className="text-sm font-extrabold text-indigo-600">{doneCount} / {items.length} done · {progressPct}%</span>
             </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Planned Duration</p>
-              <p className="text-2xl font-extrabold text-slate-900">{totalDuration} mins</p>
-            </div>
-          </div>
-
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center font-bold">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Target Exam</p>
-              <p className="text-sm font-bold text-slate-900 truncate max-w-[170px]">
-                {plan?.exam_deadline ? new Date(plan.exam_deadline).toLocaleDateString() : 'Upcoming'}
-              </p>
+            <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="h-3 bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full transition-all"
+                style={{ width: `${progressPct}%` }}
+              />
             </div>
           </div>
-        </div>
+        </>
       )}
+
 
       {/* Creation Modal / Form */}
       {showCreateForm && (
@@ -276,90 +282,63 @@ export const PlannerPage: React.FC = () => {
                 return (
                   <div
                     key={item.id || idx}
-                    className="p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/70 transition-colors"
+                    className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/70 transition-colors"
                   >
-                    <div className="space-y-1.5">
-                      <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-3">
+                      {/* Status indicator */}
+                      <span className={`w-3 h-3 rounded-full flex-shrink-0 ${
+                        item.status === 'done' ? 'bg-emerald-500' :
+                        item.status === 'skipped' ? 'bg-slate-300' : 'bg-amber-400'
+                      }`} />
+                      <div>
                         <span className="text-sm font-bold text-slate-900">{currentTopicName}</span>
-                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                          {subject}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-4 text-xs text-slate-500">
-                        <span className="flex items-center gap-1">
-                          <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          {item.duration_minutes} Minutes
-                        </span>
-                        <span>•</span>
-                        <span className="capitalize">Status: <strong className="text-slate-700">{item.status}</strong></span>
-                      </div>
-                      <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
-                        <div className="flex items-center gap-3">
-                          <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-indigo-50 text-xs font-semibold text-slate-700 hover:text-indigo-700 cursor-pointer transition-colors">
-                            <span>{uploadingTopicId === item.topic_id ? 'Processing...' : 'Upload PDF or text'}</span>
-                            <input
-                              type="file"
-                              accept=".pdf,.txt,.text,application/pdf,text/plain"
-                              className="hidden"
-                              disabled={uploadingTopicId === item.topic_id}
-                              onChange={(event) => {
-                                const file = event.target.files?.[0];
-                                if (file) void handleDocumentUpload(item.topic_id, file);
-                                event.target.value = '';
-                              }}
-                            />
-                          </label>
-                          <span className="text-[11px] text-slate-400">{(documentsByTopic[item.topic_id] ?? []).length} document(s)</span>
+                        <div className="flex items-center gap-3 text-xs text-slate-500 mt-0.5">
+                          <span>{item.duration_minutes} min</span>
+                          <span>•</span>
+                          <span className={`capitalize font-semibold ${
+                            item.status === 'done' ? 'text-emerald-600' :
+                            item.status === 'skipped' ? 'text-slate-400' : 'text-amber-600'
+                          }`}>{item.status}</span>
                         </div>
-                        {(documentsByTopic[item.topic_id] ?? []).map((document) => (
-                          <div key={document.id} className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2 text-xs">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="font-semibold text-slate-700 truncate">{document.filename}</span>
-                              <span className={`font-semibold ${document.status === 'completed' ? 'text-emerald-600' : document.status === 'failed' ? 'text-red-600' : 'text-amber-600'}`}>
-                                {document.status}
-                              </span>
-                            </div>
-                            <p className="text-slate-400 mt-1">Uploaded {new Date(document.uploaded_at).toLocaleDateString()}</p>
-                            {document.status === 'completed' && (
-                              <div className="mt-2 text-slate-600 space-y-1">
-                                <p><strong>Difficulty:</strong> {document.difficulty} {document.difficulty_reason ? `- ${document.difficulty_reason}` : ''}</p>
-                                <p><strong>Estimated study:</strong> {document.estimated_hours} hours</p>
-                                <p><strong>Concepts:</strong> {document.concepts.join(', ') || 'Not identified'}</p>
-                              </div>
-                            )}
-                            {document.error_message && <p className="text-red-600 mt-1">{document.error_message}</p>}
-                          </div>
-                        ))}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2.5 pt-2 sm:pt-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {item.status !== 'done' && (
+                        <button
+                          onClick={() => void handleMarkItemStatus(item.id, 'done')}
+                          disabled={markingItem === item.id}
+                          className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-all"
+                        >
+                          {markingItem === item.id ? '...' : '✓ Done'}
+                        </button>
+                      )}
+                      {item.status === 'done' && (
+                        <button
+                          onClick={() => void handleMarkItemStatus(item.id, 'pending')}
+                          disabled={markingItem === item.id}
+                          className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-50 text-slate-500 hover:bg-slate-100 border border-slate-200 transition-all"
+                        >
+                          Undo Done
+                        </button>
+                      )}
                       <button
                         onClick={() => navigate('/session')}
-                        className="px-3.5 py-2 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                        className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all flex items-center gap-1.5"
                       >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        Focus Session
+                        ▶ Study
                       </button>
-
                       <button
                         onClick={() => navigate('/quiz')}
-                        className="px-3.5 py-2 text-xs font-semibold rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-all cursor-pointer flex items-center gap-1.5"
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-all"
                       >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                        </svg>
-                        Practice Quiz
+                        Quiz
                       </button>
                     </div>
                   </div>
                 );
               })}
+
             </div>
           ) : (
             <div className="p-8 text-center text-slate-500">
