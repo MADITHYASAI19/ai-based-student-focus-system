@@ -1,21 +1,29 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from '../hooks/useSession';
-import { explainDocumentSubtopic, getAllPlans, getTopicDocuments } from '../api/client';
+import { explainDocumentSubtopic, getAllPlans, getTopicDocuments, uploadFocusDocument } from '../api/client';
 import { useFocusMonitoring } from '../hooks/useFocusMonitoring';
 import type { MonitoringStrictness, StudyDocument, StudyPlanOut } from '../api/types';
 
 export const SessionPage: React.FC = () => {
   const { session, loading, error, elapsedTime, formatTime, startSession, endSession } = useSession();
   const [plans, setPlans] = useState<StudyPlanOut[]>([]);
+  const [plansLoading, setPlansLoading] = useState(true);
+  const [plansError, setPlansError] = useState('');
   const [selectedPlanId, setSelectedPlanId] = useState<number | undefined>();
   const [selectedPlanItemId, setSelectedPlanItemId] = useState<number | undefined>(undefined);
   const [documents, setDocuments] = useState<StudyDocument[]>([]);
+  const [focusDocument, setFocusDocument] = useState<StudyDocument | null>(null);
+  const [focusUploadLoading, setFocusUploadLoading] = useState(false);
+  const [focusUploadError, setFocusUploadError] = useState('');
+  const [openTopicName, setOpenTopicName] = useState('');
   const [selectedDocumentId, setSelectedDocumentId] = useState<number | undefined>();
   const [selectedSubtopic, setSelectedSubtopic] = useState('');
   const [explanationMode, setExplanationMode] = useState<'child' | 'average' | 'topper'>('average');
   const [durationMinutes, setDurationMinutes] = useState(45);
   const [learningContent, setLearningContent] = useState('');
+  const [explanationLoading, setExplanationLoading] = useState(false);
+  const [explanationError, setExplanationError] = useState('');
   const [showConsent, setShowConsent] = useState(false);
   const [strictness, setStrictness] = useState<MonitoringStrictness>('balanced');
   const [monitoringRequested, setMonitoringRequested] = useState(true);
@@ -24,17 +32,52 @@ export const SessionPage: React.FC = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    getAllPlans().then((items) => {
+    setPlansLoading(true);
+    getAllPlans().then(async (items) => {
       setPlans(items);
-      if (items[0]) setSelectedPlanId(items[0].id);
-    }).catch((err) => console.error('Failed to load study plans:', err));
+      const allItems = items.flatMap((plan) => plan.items.map((item) => ({ plan, item })));
+      const documentResults = await Promise.all(
+        allItems.map(async ({ item }) => [item.topic_id, await getTopicDocuments(item.topic_id)] as const)
+      );
+      const documentsByTopic = new Map(documentResults);
+      const itemWithDocument = allItems.find(({ item }) =>
+        (documentsByTopic.get(item.topic_id) || []).some((document) => document.status === 'completed')
+      );
+      const initialSelection = itemWithDocument || allItems[0];
+      setSelectedPlanId(initialSelection?.plan.id);
+      setSelectedPlanItemId(initialSelection?.item.id);
+      setPlansError('');
+    }).catch((err) => {
+      console.error('Failed to load study plans:', err);
+      setPlansError('Study plans could not be loaded. Please refresh and try again.');
+    }).finally(() => setPlansLoading(false));
   }, []);
 
   const selectedPlan = plans.find((item) => item.id === selectedPlanId);
   const planItems = selectedPlan?.items || [];
   const selectedItem = planItems.find((item) => item.id === selectedPlanItemId);
   const selectedDocument = documents.find((document) => document.id === selectedDocumentId);
-  const subtopics = (selectedDocument?.structure || []).flatMap((topic) => topic.subtopics || []);
+  const activeDocument = focusDocument || selectedDocument;
+
+  const handleFocusUpload = async (file: File) => {
+    setFocusUploadLoading(true);
+    setFocusUploadError('');
+    try {
+      const document = await uploadFocusDocument(file);
+      setFocusDocument(document);
+      setSelectedDocumentId(document.id);
+      const firstTopic = document.structure[0];
+      const firstSubtopic = firstTopic?.subtopics?.[0]?.name || '';
+      setOpenTopicName(firstTopic?.name || '');
+      setSelectedSubtopic(firstSubtopic);
+      setLearningContent('');
+      setExplanationError('');
+    } catch (error: any) {
+      setFocusUploadError(error.response?.data?.detail || 'The PDF/text document could not be processed.');
+    } finally {
+      setFocusUploadLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!selectedPlanItemId) return;
@@ -46,6 +89,8 @@ export const SessionPage: React.FC = () => {
       setDocuments(completed);
       setSelectedDocumentId(completed[0]?.id);
       setSelectedSubtopic(completed[0]?.structure?.[0]?.subtopics?.[0]?.name || '');
+      setLearningContent('');
+      setExplanationError('');
     }).catch((err) => console.error('Failed to load topic documents:', err));
   }, [selectedPlanItemId, selectedPlanId]);
 
@@ -64,9 +109,25 @@ export const SessionPage: React.FC = () => {
         explanation_mode: explanationMode,
         duration_minutes: durationMinutes,
       });
-      if (selectedDocumentId && selectedSubtopic) {
-        const explanation = await explainDocumentSubtopic(selectedDocumentId, selectedSubtopic, explanationMode);
-        setLearningContent(explanation.explanation);
+      if (activeDocument && selectedSubtopic) {
+        setExplanationLoading(true);
+        setExplanationError('');
+        try {
+          const explanation = await explainDocumentSubtopic(activeDocument.id, selectedSubtopic, explanationMode);
+          setLearningContent(explanation.explanation);
+        } catch (explanationRequestError: any) {
+          console.error('Failed to load Focus Mode explanation:', explanationRequestError);
+          setLearningContent('');
+          setExplanationError(
+            explanationRequestError.response?.data?.detail ||
+            'The explanation could not be generated. The focus session is still running.'
+          );
+        } finally {
+          setExplanationLoading(false);
+        }
+      } else {
+        setLearningContent('');
+        setExplanationError('Select a processed PDF and subtopic to show an AI explanation.');
       }
       if (withMonitoring) await startMonitoring(started.id, strictness);
     } catch (err) {
@@ -170,9 +231,12 @@ export const SessionPage: React.FC = () => {
         {!session && (
           <div className="max-w-md mx-auto space-y-6">
             <div className="space-y-4 text-left">
+              {plansLoading && <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">Loading your study plans...</div>}
+              {plansError && <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{plansError}</div>}
+              {!plansLoading && !plansError && plans.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 px-4 py-4 text-sm text-slate-500">No study plans are available for this account. Create a plan in Study Planner first.</div>}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">Study Plan</label>
-                <select value={selectedPlanId ?? ''} onChange={(e) => { const id = Number(e.target.value); setSelectedPlanId(id); setSelectedPlanItemId(undefined); setDocuments([]); }} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm">
+                <select value={selectedPlanId ?? ''} onChange={(e) => { const id = Number(e.target.value); const nextPlan = plans.find((plan) => plan.id === id); setSelectedPlanId(id); setSelectedPlanItemId(nextPlan?.items[0]?.id); setDocuments([]); }} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm">
                   <option value="">Choose a study plan</option>
                   {plans.map((item) => <option key={item.id} value={item.id}>Plan #{item.id} · {new Date(item.generated_at).toLocaleDateString()}</option>)}
                 </select>
@@ -184,24 +248,62 @@ export const SessionPage: React.FC = () => {
                   {planItems.map((item) => <option key={item.id} value={item.id}>{item.topic_name || `Topic #${item.topic_id}`} · {item.duration_minutes} min</option>)}
                 </select>
               </div>
-              {selectedItem && <>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">PDF / Learning Document</label>
-                  <select value={selectedDocumentId ?? ''} onChange={(e) => { const id = Number(e.target.value); const document = documents.find((item) => item.id === id); setSelectedDocumentId(id); setSelectedSubtopic(document?.structure?.[0]?.subtopics?.[0]?.name || ''); }} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm">
-                    <option value="">No processed PDF selected</option>
-                    {documents.map((document) => <option key={document.id} value={document.id}>{document.filename}</option>)}
-                  </select>
+              <div className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4">
+                <label className="block text-xs font-bold uppercase tracking-wider text-indigo-800 mb-2">Upload PDF or text</label>
+                <input
+                  type="file"
+                  accept=".pdf,.txt,.text,application/pdf,text/plain"
+                  disabled={focusUploadLoading}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) void handleFocusUpload(file);
+                    event.target.value = '';
+                  }}
+                  className="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-100 file:px-3 file:py-1.5 file:font-semibold file:text-indigo-700"
+                />
+                <p className="mt-2 text-xs text-indigo-700">AI will create the topics and subtopics automatically from the actual document.</p>
+                {focusUploadLoading && <p className="mt-2 text-xs font-semibold text-indigo-700">Extracting, embedding, and structuring your document...</p>}
+                {focusUploadError && <p className="mt-2 text-xs font-semibold text-rose-700">{focusUploadError}</p>}
+              </div>
+              {selectedPlan && planItems.length > 0 && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="px-2 pb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Topics in this plan</p>
+                  <div className="space-y-2">
+                    {planItems.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setSelectedPlanItemId(item.id)}
+                        className={`flex w-full items-center justify-between rounded-xl border px-3 py-3 text-left transition-colors ${selectedPlanItemId === item.id ? 'border-indigo-300 bg-white shadow-sm' : 'border-transparent bg-white/60 hover:border-slate-300'}`}
+                      >
+                        <span>
+                          <span className="block text-sm font-bold text-slate-800">{item.topic_name || `Topic #${item.topic_id}`}</span>
+                          <span className="block text-xs text-slate-500 mt-1">{item.duration_minutes} minutes · {item.status}</span>
+                        </span>
+                        <span className="text-indigo-500 text-lg">›</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">Topic / Subtopic</label>
-                  <select value={selectedSubtopic} onChange={(e) => setSelectedSubtopic(e.target.value)} disabled={!selectedDocumentId} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm">
-                    <option value="">Choose a subtopic</option>
-                    {subtopics.map((subtopic) => <option key={subtopic.name} value={subtopic.name}>{subtopic.name}</option>)}
-                  </select>
+              )}
+              {focusDocument && (
+                <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div><p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">AI-generated PDF topics</p><p className="mt-1 text-sm font-bold text-slate-800">{focusDocument.filename}</p></div>
+                    <span className="text-xs font-semibold text-emerald-600">Processed</span>
+                  </div>
+                  {(focusDocument.structure || []).map((topic) => (
+                    <div key={topic.name} className="overflow-hidden rounded-xl border border-slate-200">
+                      <button type="button" onClick={() => { setOpenTopicName(openTopicName === topic.name ? '' : topic.name); setSelectedSubtopic(topic.subtopics[0]?.name || ''); }} className="flex w-full items-center justify-between bg-slate-50 px-4 py-3 text-left hover:bg-indigo-50">
+                        <span className="text-sm font-bold text-slate-800">{topic.name}</span><span className="text-indigo-500">{openTopicName === topic.name ? '⌄' : '›'}</span>
+                      </button>
+                      {openTopicName === topic.name && <div className="space-y-2 border-t border-slate-200 p-3">{topic.subtopics.map((subtopic) => <button key={subtopic.name} type="button" onClick={() => { setSelectedSubtopic(subtopic.name); setLearningContent(''); setExplanationError(''); }} className={`block w-full rounded-lg px-3 py-2 text-left text-xs ${selectedSubtopic === subtopic.name ? 'bg-indigo-100 font-bold text-indigo-800' : 'text-slate-600 hover:bg-slate-50'}`}>{subtopic.name}</button>)}</div>}
+                    </div>
+                  ))}
                 </div>
-              </>}
+              )}
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">Explanation</label><select value={explanationMode} onChange={(e) => setExplanationMode(e.target.value as typeof explanationMode)} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm"><option value="child">Child</option><option value="average">Average</option><option value="topper">Topper</option></select></div>
+                <div><label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">Explanation</label><select value={explanationMode} onChange={(e) => { setExplanationMode(e.target.value as typeof explanationMode); setLearningContent(''); setExplanationError(''); }} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm"><option value="child">Child</option><option value="average">Average</option><option value="topper">Topper</option></select></div>
                 <div><label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">Timer (min)</label><input type="number" min="10" max="240" step="5" value={durationMinutes} onChange={(e) => setDurationMinutes(Math.max(10, Math.min(240, Number(e.target.value) || 10)))} className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm" /></div>
               </div>
             </div>
@@ -232,13 +334,6 @@ export const SessionPage: React.FC = () => {
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
               Session #{session.id} in progress • Stay focused!
             </div>
-
-            {learningContent && (
-              <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-left">
-                <p className="text-xs font-bold uppercase tracking-wider text-indigo-700">{explanationMode} explanation · {selectedSubtopic}</p>
-                <div className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{learningContent}</div>
-              </div>
-            )}
 
             <button
               onClick={handleEnd}
@@ -303,7 +398,7 @@ export const SessionPage: React.FC = () => {
       </div>
 
       {isSessionActive && (
-        <aside className="fixed bottom-5 right-5 z-50 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-slate-700 bg-slate-950 text-white shadow-2xl">
+        <aside style={{ width: '352px', resize: 'horizontal', overflow: 'auto', minWidth: '280px', maxWidth: 'min(42rem, calc(100vw - 2rem))' }} className="fixed bottom-5 right-5 z-50 rounded-2xl border border-slate-700 bg-slate-950 text-white shadow-2xl">
           <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
             <button type="button" onClick={() => setFocusPanelOpen((open) => !open)} className="flex items-center gap-2 text-left">
               <span className={`h-2.5 w-2.5 rounded-full ${focusScore >= 70 ? 'bg-emerald-400' : focusScore >= 40 ? 'bg-amber-400' : 'bg-rose-400'}`} />
@@ -313,6 +408,23 @@ export const SessionPage: React.FC = () => {
           </div>
           {focusPanelOpen && (
             <div className="space-y-3 p-3">
+              <div className="rounded-xl border border-indigo-400/30 bg-indigo-500/15 p-4 text-left">
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-indigo-200">Current lesson</p>
+                <p className="mt-1 text-sm font-extrabold text-white">{selectedItem?.topic_name || 'General study session'}</p>
+                {selectedSubtopic && <p className="mt-1 text-xs text-indigo-200">Subtopic: {selectedSubtopic}</p>}
+                <p className="mt-1 text-[11px] uppercase tracking-wider text-slate-400">{explanationMode} mode · {durationMinutes} minutes</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/[0.06] p-3 text-left">
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Study plan progress</p>
+                <p className="mt-1 text-sm font-bold text-white">{selectedPlan ? `Plan #${selectedPlan.id}` : 'General session'}</p>
+                <p className="mt-1 text-xs text-slate-300">{selectedItem ? `Item status: ${selectedItem.status}` : 'Not assigned to a plan item'}</p>
+              </div>
+              <div className="max-h-72 overflow-y-auto rounded-xl border border-white/10 bg-white/[0.06] p-4 text-left">
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">AI explanation</p>
+                {explanationLoading && <p className="mt-3 text-sm text-indigo-200">Preparing your {explanationMode}-level explanation from the selected PDF...</p>}
+                {!explanationLoading && learningContent && <div className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-100">{learningContent}</div>}
+                {!explanationLoading && !learningContent && explanationError && <p className="mt-3 text-sm leading-6 text-rose-200">{explanationError}</p>}
+              </div>
               <video ref={videoRef} muted playsInline className={`aspect-video w-full rounded-xl bg-black object-cover ${monitoring ? '' : 'hidden'}`} />
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="rounded-lg bg-white/10 px-3 py-2"><span className="block text-slate-400">Warnings</span><strong>{warningCount}</strong></div>

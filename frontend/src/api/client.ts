@@ -83,6 +83,15 @@ export const uploadTopicDocument = async (topicId: number, file: File): Promise<
   return response.data;
 };
 
+export const uploadFocusDocument = async (file: File): Promise<StudyDocument> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await apiClient.post<StudyDocument>('/api/topics/focus/documents', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
 export const estimateTopic = async (topicName: string, file?: File): Promise<TopicEstimate> => {
   const formData = new FormData();
   formData.append('topic_name', topicName);

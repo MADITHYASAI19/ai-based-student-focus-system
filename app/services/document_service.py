@@ -13,7 +13,7 @@ from ai_service.embeddings.store import upsert_document
 from ai_service.generation.document_analyzer import analyze_document, estimate_topic, generate_explanation
 from ai_service.preprocessing.chunker import chunk_text
 from ai_service.preprocessing.cleaner import clean_text
-from app.models.models import StudyDocument, Topic, User
+from app.models.models import StudyDocument, Subject, Topic, User
 
 logger = logging.getLogger(__name__)
 _UPLOAD_DIR = Path("uploads") / "study_documents"
@@ -109,6 +109,21 @@ def upload_document(db: Session, topic: Topic, user: User, upload: UploadFile) -
     db.commit()
     db.refresh(document)
     return process_document(db, document, topic, content)
+
+
+def upload_focus_document(db: Session, user: User, upload: UploadFile) -> StudyDocument:
+    """Create the topic automatically from a Focus Session PDF/text upload."""
+    filename = Path(upload.filename or "study_document").name
+    topic_name = Path(filename).stem.replace("_", " ").strip() or "Uploaded Study Document"
+    subject = db.query(Subject).filter(Subject.name == "My Topics").first()
+    if not subject:
+        subject = Subject(name="My Topics")
+        db.add(subject)
+        db.flush()
+    topic = Topic(subject_id=subject.id, name=topic_name[:200], difficulty="medium", estimated_hours=1)
+    db.add(topic)
+    db.flush()
+    return upload_document(db, topic, user, upload)
 
 
 def estimate_topic_from_upload(topic_name: str, upload: UploadFile | None) -> dict:

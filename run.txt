@@ -1,0 +1,64 @@
+# How to Run the AI-Based Study Platform
+
+Follow these steps to run the project locally.
+
+## 1. Prerequisites
+- Python 3.11 or 3.12 (3.12 recommended)
+- Node.js 18 LTS or later
+- Groq API key
+
+## 2. Setup Virtual Environment & Install Dependencies
+
+```bash
+# Create and activate a Python virtual environment
+python -m venv .venv
+
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+# (For macOS / Linux: source .venv/bin/activate)
+
+# Install Python dependencies
+pip install -r requirements.txt
+pip install cachetools chromadb
+
+# Install frontend dependencies
+npm --prefix frontend install
+```
+
+## 3. Environment Setup
+
+Copy `.env.example` to `.env` and fill in the required variables (specifically `JWT_SECRET_KEY` and `AI_API_KEY`).
+
+```bash
+cp .env.example .env
+```
+
+## 4. Database Setup & Seeding
+
+Apply database migrations and seed the initial development data.
+
+```bash
+# Run migrations
+alembic upgrade head
+
+# Seed dev data
+python app/scripts/seed_dev_data.py
+```
+
+## 5. Run the Backend
+
+Make sure your virtual environment is active. Run the FastAPI server:
+
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+The REST API will be available at `http://localhost:8000` (Swagger UI at `/docs`).
+
+## 6. Run the Frontend
+
+In a separate terminal, start the Vite dev server for the frontend:
+
+```bash
+npm --prefix frontend run dev
+```
+The frontend application will be available at `http://localhost:5173`.

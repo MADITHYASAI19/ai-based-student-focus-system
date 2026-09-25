@@ -7,10 +7,26 @@ from app.core.database import get_db
 from app.deps import get_current_user
 from app.models.models import Topic, User
 from app.schemas.documents import ExplanationOut, ExplanationRequest, StudyDocumentOut, TopicEstimateOut
-from app.services.document_service import explain_document_subtopic, estimate_topic_from_upload, list_documents, upload_document
+from app.services.document_service import explain_document_subtopic, estimate_topic_from_upload, list_documents, upload_document, upload_focus_document
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@router.post("/focus/documents", response_model=StudyDocumentOut, status_code=status.HTTP_201_CREATED)
+def upload_focus_learning_document(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Upload a Focus Session document and let the AI create its topic structure."""
+    try:
+        return upload_focus_document(db, current_user, file)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Focus document upload failed")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Document processing failed") from exc
 
 
 @router.post("/documents/{document_id}/explain", response_model=ExplanationOut)

@@ -16,6 +16,7 @@ export const PlannerPage: React.FC = () => {
   const [creating, setCreating] = useState(false);
   const [documentsByTopic, setDocumentsByTopic] = useState<Record<number, StudyDocument[]>>({});
   const [uploadingTopicId, setUploadingTopicId] = useState<number | null>(null);
+  const [documentMessage, setDocumentMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -44,17 +45,23 @@ export const PlannerPage: React.FC = () => {
       const newPlan = await createPlan(planData);
       const createdTopicId = newPlan.items[0]?.topic_id;
       if (studyFile && createdTopicId) {
-        const document = await uploadTopicDocument(createdTopicId, studyFile);
-        setDocumentsByTopic((current) => ({
-          ...current,
-          [createdTopicId]: [document, ...(current[createdTopicId] ?? [])],
-        }));
+        try {
+          const document = await uploadTopicDocument(createdTopicId, studyFile);
+          setDocumentsByTopic((current) => ({
+            ...current,
+            [createdTopicId]: [document, ...(current[createdTopicId] ?? [])],
+          }));
+          setDocumentMessage({ type: 'success', text: `${document.filename} was stored and processed successfully.` });
+        } catch (uploadError: any) {
+          const detail = uploadError.response?.data?.detail || 'The plan was saved, but the document could not be processed.';
+          setDocumentMessage({ type: 'error', text: detail });
+        }
       }
       setTopicName('');
       setStudyFile(null);
       setShowCreateForm(false);
-    } catch (err) {
-      console.error('Failed to create plan:', err);
+    } catch (err: any) {
+      setDocumentMessage({ type: 'error', text: err.response?.data?.detail || 'Failed to create the study plan.' });
     } finally {
       setCreating(false);
     }
@@ -98,14 +105,16 @@ export const PlannerPage: React.FC = () => {
 
   const handleDocumentUpload = async (topicId: number, file: File) => {
     setUploadingTopicId(topicId);
+    setDocumentMessage(null);
     try {
       const document = await uploadTopicDocument(topicId, file);
       setDocumentsByTopic((current) => ({
         ...current,
         [topicId]: [document, ...(current[topicId] ?? [])],
       }));
-    } catch (err) {
-      console.error('Failed to upload study document:', err);
+      setDocumentMessage({ type: 'success', text: `${document.filename} was stored and processed successfully.` });
+    } catch (err: any) {
+      setDocumentMessage({ type: 'error', text: err.response?.data?.detail || 'The document could not be stored.' });
     } finally {
       setUploadingTopicId(null);
     }
@@ -133,6 +142,12 @@ export const PlannerPage: React.FC = () => {
           {hasPlan ? 'Add / Replace Plan' : 'Create Study Plan'}
         </button>
       </div>
+
+      {documentMessage && (
+        <div className={`rounded-xl border px-4 py-3 text-sm ${documentMessage.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700'}`}>
+          {documentMessage.text}
+        </div>
+      )}
 
       {/* Overview Stats */}
       {hasPlan && (
