@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePlan } from '../hooks/usePlan';
-import { breakdownTopics, updatePlanItemStatus, getAllPlans } from '../api/client';
+import { breakdownTopics, updatePlanItemStatus, getAllPlans, finalizePlan } from '../api/client';
 import type { StudyPlanCreate, TopicConcept } from '../api/types';
 
 export const PlannerPage: React.FC = () => {
@@ -12,6 +12,7 @@ export const PlannerPage: React.FC = () => {
   const [generatedTopics, setGeneratedTopics] = useState<TopicConcept[]>([]);
   const [isGeneratingTopics, setIsGeneratingTopics] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
   const [documentMessage, setDocumentMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [markingItem, setMarkingItem] = useState<number | null>(null);
   const navigate = useNavigate();
@@ -67,6 +68,20 @@ export const PlannerPage: React.FC = () => {
     }
   };
 
+  const handleFinalizePlan = async () => {
+    if (!plan) return;
+    setFinalizing(true);
+    try {
+      await finalizePlan(plan.id);
+      await refetch();
+      setDocumentMessage({ type: 'success', text: 'Study plan finalized! This is now your active plan.' });
+    } catch (err: any) {
+      setDocumentMessage({ type: 'error', text: err.response?.data?.detail || 'Failed to finalize the study plan.' });
+    } finally {
+      setFinalizing(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-24">
@@ -89,7 +104,7 @@ export const PlannerPage: React.FC = () => {
   const items = plan?.items || [];
   const totalDuration = items.reduce((acc, curr) => acc + curr.duration_minutes, 0);
   const doneCount = items.filter((i) => i.status === 'done').length;
-  const progressPct = items.length ? Math.round((doneCount / items.length) * 100) : 0;
+  const progressPct = plan?.progress_percentage || (items.length ? Math.round((doneCount / items.length) * 100) : 0);
 
   return (
     <div className="space-y-8">
@@ -269,8 +284,24 @@ export const PlannerPage: React.FC = () => {
       {hasPlan && plan ? (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-            <h2 className="font-bold text-slate-900 text-base">Current Study Plan Items</h2>
-            <span className="text-xs font-medium text-slate-500">Plan ID: #{plan.id}</span>
+            <div className="flex items-center gap-3">
+              <h2 className="font-bold text-slate-900 text-base">Current Study Plan Items</h2>
+              {plan.is_active && (
+                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold">Active</span>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-medium text-slate-500">Plan ID: #{plan.id}</span>
+              {!plan.is_active && (
+                <button
+                  onClick={handleFinalizePlan}
+                  disabled={finalizing}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all"
+                >
+                  {finalizing ? 'Finalizing...' : 'Finalize Plan'}
+                </button>
+              )}
+            </div>
           </div>
 
           {items.length > 0 ? (

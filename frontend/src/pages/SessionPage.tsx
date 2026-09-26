@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from '../hooks/useSession';
+import { useAuth } from '../contexts/AuthContext';
 import {
   explainTopic,
   getAllPlans,
   getSessionHistory,
   updatePlanItemStatus,
+  getActivePlan,
 } from '../api/client';
 import { useFocusMonitoring } from '../hooks/useFocusMonitoring';
 import type { MonitoringStrictness, StudyPlanOut, StudySessionOut } from '../api/types';
@@ -37,6 +39,7 @@ const ExplanationContent: React.FC<{ text: string }> = ({ text }) => {
 // ── Main SessionPage ─────────────────────────────────────────────────────────
 export const SessionPage: React.FC = () => {
   const { session, loading, error, elapsedTime, formatTime, startSession, endSession } = useSession();
+  const { userState, refreshUserState } = useAuth();
   const navigate = useNavigate();
 
   // Plans & topics
@@ -78,12 +81,13 @@ export const SessionPage: React.FC = () => {
     getAllPlans()
       .then((items) => {
         setPlans(items);
-        // Auto-select most recent plan
-        const latestPlan = items[0];
-        if (latestPlan) {
-          setSelectedPlanId(latestPlan.id);
+        
+        // Prioritize active plan from user state
+        const activePlan = userState?.active_plan || items[0];
+        if (activePlan) {
+          setSelectedPlanId(activePlan.id);
           // Auto-select first pending item
-          const firstPending = latestPlan.items.find((item) => item.status === 'pending') ?? latestPlan.items[0];
+          const firstPending = activePlan.items.find((item) => item.status === 'pending') ?? activePlan.items[0];
           if (firstPending) {
             setSelectedPlanItemId(firstPending.id);
             setDurationMinutes(firstPending.duration_minutes || 45);
@@ -96,7 +100,7 @@ export const SessionPage: React.FC = () => {
         setPlansError('Study plans could not be loaded. Please refresh and try again.');
       })
       .finally(() => setPlansLoading(false));
-  }, []);
+  }, [userState?.active_plan]);
 
   // ── Load session history ───────────────────────────────────────────────────
   useEffect(() => {
@@ -162,9 +166,10 @@ export const SessionPage: React.FC = () => {
     setMarkingDone(true);
     try {
       await updatePlanItemStatus(selectedItem.id, 'done');
-      // Refresh plans
+      // Refresh plans and user state
       const updated = await getAllPlans();
       setPlans(updated);
+      await refreshUserState();
       const updatedPlan = updated.find((p) => p.id === selectedPlanId);
       const nextPending = updatedPlan?.items.find((item) => item.status === 'pending');
       if (nextPending) {

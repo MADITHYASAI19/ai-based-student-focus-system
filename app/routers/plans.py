@@ -14,7 +14,7 @@ from app.schemas.plan import (
     TopicExplainResponse,
     PlanItemOut,
 )
-from app.services.plan_service import create_plan, get_plan, update_item_status
+from app.services.plan_service import create_plan, get_plan, update_item_status, finalize_plan, get_active_plan, get_user_current_state
 from ai_service.generation.plan_gen import generate_topic_breakdown
 from ai_service.generation.topic_explainer import generate_topic_explanation
 
@@ -97,6 +97,40 @@ def update_plan_item_status(
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan item not found")
     return item
+
+
+@router.get("/active/current", response_model=StudyPlanOut | None)
+def get_active_study_plan(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get the currently active study plan for the authenticated user."""
+    return get_active_plan(db=db, student_id=current_user.id)
+
+
+@router.post("/{plan_id}/finalize", response_model=StudyPlanOut)
+def finalize_study_plan(
+    plan_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Finalize a study plan as the active plan for the authenticated user."""
+    plan = finalize_plan(db=db, plan_id=plan_id, student_id=current_user.id)
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Study plan not found",
+        )
+    return plan
+
+
+@router.get("/state/current")
+def get_current_learning_state(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get the current learning state (active plan, session) for the authenticated user."""
+    return get_user_current_state(db=db, student_id=current_user.id)
 
 
 @router.get("/{student_id}", response_model=StudyPlanOut)

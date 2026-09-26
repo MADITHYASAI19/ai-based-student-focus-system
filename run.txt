@@ -1,64 +1,122 @@
-# How to Run the AI-Based Study Platform
+RUN FRONTEND
+=============
+(React + TypeScript + Vite SPA. Requires the backend to be running first —
+see RUN_BACKEND.txt — since the frontend calls http://localhost:8000)
 
-Follow these steps to run the project locally.
-
-## 1. Prerequisites
-- Python 3.11 or 3.12 (3.12 recommended)
+Prerequisites
+-------------
 - Node.js 18 LTS or later
-- Groq API key
 
-## 2. Setup Virtual Environment & Install Dependencies
+1) Install dependencies
+--------------------------
+npm --prefix frontend install
 
-```bash
-# Create and activate a Python virtual environment
+2) Run the dev server
+-------------------------
+npm --prefix frontend run dev
+
+Frontend -> http://localhost:5173
+
+3) (Optional) Build a production bundle
+-------------------------------------------
+npm --prefix frontend run build
+# Output: frontend/dist/
+
+npm --prefix frontend run preview   # preview the production build locally
+
+Routes
+------
+/login     Login
+/register  Register
+/planner   Study plan creator
+/session   Focus timer / session tracker (webcam-based focus detection)
+/quiz      AI-generated quiz (server-graded)
+/doubts    RAG doubt-solver chat
+
+Notes
+-----
+- Focus/attention detection (phone/away/sleepy/tab-switch) runs fully
+  client-side in the browser using @mediapipe/tasks-vision — no extra setup
+  needed, it just requires camera permission in the browser.
+- CORS is pre-configured on the backend for http://localhost:5173 and
+  http://localhost:5174 — no changes needed for default dev setup.
+
+
+
+
+
+  RUN BACKEND + AI/ML SERVICE + DATABASE
+========================================
+(FastAPI backend, ai_service (LLM/RAG/embeddings), and the database — all in
+one Python environment. This does NOT include the frontend, see RUN_FRONTEND.txt)
+
+Prerequisites
+-------------
+- Python 3.11 or 3.12
+- A Groq API key -> https://console.groq.com/
+
+1) Create & activate virtual environment
+-----------------------------------------
 python -m venv .venv
 
 # Windows PowerShell
 .venv\Scripts\Activate.ps1
-# (For macOS / Linux: source .venv/bin/activate)
+# macOS / Linux
+source .venv/bin/activate
 
-# Install Python dependencies
+2) Install dependencies (backend + AI/ML service)
+---------------------------------------------------
 pip install -r requirements.txt
+pip install -r ai_service/requirements.txt
 pip install cachetools chromadb
 
-# Install frontend dependencies
-npm --prefix frontend install
-```
-
-## 3. Environment Setup
-
-Copy `.env.example` to `.env` and fill in the required variables (specifically `JWT_SECRET_KEY` and `AI_API_KEY`).
-
-```bash
+3) Configure environment
+--------------------------
 cp .env.example .env
-```
+# then edit .env and set at minimum:
+#   JWT_SECRET_KEY   -> python -c "import secrets; print(secrets.token_hex(32))"
+#   AI_API_KEY       -> your Groq API key
+# Defaults are fine for everything else (SQLite DB, embedded Chroma,
+# in-process cache fallback — no Postgres/Redis/Chroma server needed).
 
-## 4. Database Setup & Seeding
-
-Apply database migrations and seed the initial development data.
-
-```bash
-# Run migrations
+4) Set up the database (migrations + seed data)
+---------------------------------------------------
 alembic upgrade head
-
-# Seed dev data
 python app/scripts/seed_dev_data.py
-```
+# Seeds Mathematics/Biology subjects + starter topics. Safe to re-run
+# (idempotent).
 
-## 5. Run the Backend
+5) (Optional) run the test suite
+------------------------------------
+python -m pytest tests/ -v \
+  --ignore=tests/test_embedding_store.py \
+  --ignore=tests/test_embeddings.py
+# Expected: 56 passed
 
-Make sure your virtual environment is active. Run the FastAPI server:
-
-```bash
+6) Run the backend API (this also serves the AI/ML endpoints)
+------------------------------------------------------------------
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-The REST API will be available at `http://localhost:8000` (Swagger UI at `/docs`).
 
-## 6. Run the Frontend
+API        -> http://localhost:8000
+Swagger UI -> http://localhost:8000/docs
+Health     -> http://localhost:8000/health
 
-In a separate terminal, start the Vite dev server for the frontend:
+Notes
+-----
+- Vector store (ChromaDB) runs embedded by default -> ./chroma_data/
+  (no separate server needed). Set CHROMA_MODE=http + CHROMA_URL in .env
+  only if you want to run a real Chroma server (see docker-compose.dev.yml).
+- Redis is optional for local dev; the app auto-falls back to an in-process
+  cache if REDIS_URL is unreachable.
+- To ingest study material into the vector store for the doubt-solver, use
+  the scripts in ai_service/scripts/ (e.g. load_notes.py) or upload
+  documents via POST /api/topics/{topic_id}/documents.
 
-```bash
-npm --prefix frontend run dev
-```
-The frontend application will be available at `http://localhost:5173`.
+--------------------------------------------------------------------------
+PRODUCTION STACK (Postgres + Redis + Chroma server + API, via Docker)
+--------------------------------------------------------------------------
+cp .env.example .env
+# edit .env: set DATABASE_URL to Postgres, real JWT_SECRET_KEY, real AI_API_KEY
+
+docker compose up -d
+docker compose exec api python app/scripts/seed_dev_data.py

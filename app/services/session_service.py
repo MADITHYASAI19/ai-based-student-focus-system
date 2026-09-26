@@ -2,7 +2,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.models.models import FocusEvent, StudySession
+from app.models.models import FocusEvent, StudySession, User
 
 
 def start_session(
@@ -27,6 +27,13 @@ def start_session(
     db.add(session)
     db.commit()
     db.refresh(session)
+    
+    # Update user's current session
+    user = db.query(User).filter(User.id == student_id).first()
+    if user:
+        user.current_session_id = session.id
+        db.commit()
+    
     return session
 
 
@@ -58,6 +65,11 @@ def end_session(db: Session, session: StudySession) -> StudySession:
     session.focus_score = score
     if session.productivity_score is None:
         session.productivity_score = score
+
+    # Clear user's current session
+    user = db.query(User).filter(User.id == session.student_id).first()
+    if user and user.current_session_id == session.id:
+        user.current_session_id = None
 
     db.commit()
     db.refresh(session)

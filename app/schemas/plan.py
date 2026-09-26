@@ -46,6 +46,8 @@ class StudyPlanOut(BaseModel):
     exam_deadline: datetime | None = None
     status: str
     generated_at: datetime
+    is_active: bool = False
+    progress_percentage: int = 0
     items: list[PlanItemOut] = Field(validation_alias="plan_items")
 
 

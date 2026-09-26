@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Text, JSON
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Text, JSON, Boolean
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from app.core.database import Base
 
@@ -49,6 +49,8 @@ class User(Base):
     target_exam: Mapped[str | None] = mapped_column(String, nullable=True)
     parent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    current_plan_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Active study plan (no FK to avoid circular dependency)
+    current_session_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Active session (no FK to avoid circular dependency)
 
     # Relationships
     parent: Mapped["User"] = relationship("User", remote_side=[id], back_populates="children")
@@ -115,6 +117,8 @@ class StudyPlan(Base):
     exam_deadline: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default=PlanStatus.PENDING)
     generated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)  # The currently active/finalized plan
+    progress_percentage: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0-100
 
     # Relationships
     student: Mapped["User"] = relationship("User", back_populates="study_plans")

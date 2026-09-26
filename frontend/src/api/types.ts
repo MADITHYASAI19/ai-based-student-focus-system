@@ -105,6 +105,8 @@ export interface StudyPlanOut {
   exam_deadline: string | null;
   status: string;
   generated_at: string;
+  is_active: boolean;
+  progress_percentage: number;
   items: PlanItemOut[];
 }
 
@@ -203,4 +205,12 @@ export interface TopicExplainRequest {
 export interface TopicExplainResponse {
   topic_name: string;
   explanation: string;
+}
+
+export interface UserCurrentState {
+  user_id: number;
+  current_plan_id: number | null;
+  current_session_id: number | null;
+  active_plan: StudyPlanOut | null;
+  current_session: StudySessionOut | null;
 }

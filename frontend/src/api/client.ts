@@ -195,3 +195,21 @@ export const updatePlanItemStatus = async (itemId: number, newStatus: 'pending' 
   const response = await apiClient.patch<PlanItemOut>(`/api/plans/items/${itemId}/status`, { status: newStatus });
   return response.data;
 };
+
+// Get active plan
+export const getActivePlan = async (): Promise<StudyPlanOut | null> => {
+  const response = await apiClient.get<StudyPlanOut | null>('/api/plans/active/current');
+  return response.data;
+};
+
+// Finalize plan
+export const finalizePlan = async (planId: number): Promise<StudyPlanOut> => {
+  const response = await apiClient.post<StudyPlanOut>(`/api/plans/${planId}/finalize`);
+  return response.data;
+};
+
+// Get current learning state
+export const getCurrentState = async () => {
+  const response = await apiClient.get('/api/plans/state/current');
+  return response.data;
+};
