@@ -58,20 +58,40 @@ apiClient.interceptors.response.use(
 
 // Auth endpoints
 export const register = async (data: UserRegister): Promise<UserOut> => {
-  const response = await apiClient.post<UserOut>('/api/auth/register', data);
-  return response.data;
+  try {
+    const response = await apiClient.post<UserOut>('/api/auth/register', data);
+    return response.data;
+  } catch (error: any) {
+    throw error.response?.data || new Error('Failed to register user');
+  }
 };
 
 export const login = async (data: UserLogin): Promise<Token> => {
-  const response = await apiClient.post<Token>('/api/auth/login', data);
-  // Store token on successful login
-  localStorage.setItem(TOKEN_KEY, response.data.access_token);
-  return response.data;
+  try {
+    const formData = new URLSearchParams();
+    formData.append('username', data.email);
+    formData.append('password', data.password);
+
+    const response = await apiClient.post<Token>('/api/auth/login', formData, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    });
+    // Store token on successful login
+    localStorage.setItem(TOKEN_KEY, response.data.access_token);
+    return response.data;
+  } catch (error: any) {
+    throw error.response?.data || new Error('Login failed');
+  }
 };
 
 export const getProfile = async (): Promise<Profile> => {
-  const response = await apiClient.get<Profile>('/api/auth/me/profile');
-  return response.data;
+  try {
+    const response = await apiClient.get<Profile>('/api/auth/me/profile');
+    return response.data;
+  } catch (error: any) {
+    throw error.response?.data || new Error('Failed to fetch profile');
+  }
 };
 
 export const getTopicDocuments = async (topicId: number): Promise<StudyDocument[]> => {

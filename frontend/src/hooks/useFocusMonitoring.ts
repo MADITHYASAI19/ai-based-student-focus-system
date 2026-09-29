@@ -67,6 +67,7 @@ export const useFocusMonitoring = (): UseFocusMonitoringResult => {
   const [focusScore, setFocusScore] = useState(100);
   const [activeWarning, setActiveWarning] = useState<string | null>(null);
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
+  const isMounted = useRef(true);
 
   const waitForVideo = async () => {
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -123,6 +124,8 @@ export const useFocusMonitoring = (): UseFocusMonitoringResult => {
       setCameraAvailable(true);
       setMonitoring(true);
       setDetectorStatus('Camera active; local face analysis enabled');
+
+      if (!isMounted.current) return false;
 
       const vision = await FilesetResolver.forVisionTasks(WASM_ROOT);
       faceRef.current = await FaceLandmarker.createFromOptions(vision, {
@@ -219,6 +222,7 @@ export const useFocusMonitoring = (): UseFocusMonitoringResult => {
     window.addEventListener('blur', onBlur);
     document.addEventListener('fullscreenchange', onFullscreen);
     return () => {
+      isMounted.current = false;
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('blur', onBlur);
       document.removeEventListener('fullscreenchange', onFullscreen);

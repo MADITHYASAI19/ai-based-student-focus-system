@@ -49,14 +49,14 @@ class User(Base):
     target_exam: Mapped[str | None] = mapped_column(String, nullable=True)
     parent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    current_plan_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Active study plan (no FK to avoid circular dependency)
-    current_session_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Active session (no FK to avoid circular dependency)
+    current_plan_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("study_plans.id"), nullable=True)
+    current_session_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("study_sessions.id"), nullable=True)
 
     # Relationships
     parent: Mapped["User"] = relationship("User", remote_side=[id], back_populates="children")
     children: Mapped[list["User"]] = relationship("User", back_populates="parent")
-    study_plans: Mapped[list["StudyPlan"]] = relationship("StudyPlan", back_populates="student")
-    study_sessions: Mapped[list["StudySession"]] = relationship("StudySession", back_populates="student", cascade="all, delete-orphan")
+    study_plans: Mapped[list["StudyPlan"]] = relationship("StudyPlan", back_populates="student", foreign_keys="[StudyPlan.student_id]")
+    study_sessions: Mapped[list["StudySession"]] = relationship("StudySession", back_populates="student", cascade="all, delete-orphan", foreign_keys="[StudySession.student_id]")
     quiz_attempts: Mapped[list["QuizAttempt"]] = relationship("QuizAttempt", back_populates="student", cascade="all, delete-orphan")
 
 
@@ -121,7 +121,7 @@ class StudyPlan(Base):
     progress_percentage: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0-100
 
     # Relationships
-    student: Mapped["User"] = relationship("User", back_populates="study_plans")
+    student: Mapped["User"] = relationship("User", back_populates="study_plans", foreign_keys=[student_id])
     plan_items: Mapped[list["PlanItem"]] = relationship("PlanItem", back_populates="study_plan", cascade="all, delete-orphan")
 
 
@@ -161,7 +161,7 @@ class StudySession(Base):
     productivity_score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Relationships
-    student: Mapped["User"] = relationship("User", back_populates="study_sessions")
+    student: Mapped["User"] = relationship("User", back_populates="study_sessions", foreign_keys=[student_id])
     plan_item: Mapped["PlanItem | None"] = relationship("PlanItem", back_populates="study_sessions")
     document: Mapped["StudyDocument | None"] = relationship("StudyDocument")
     focus_events: Mapped[list["FocusEvent"]] = relationship("FocusEvent", back_populates="session", cascade="all, delete-orphan")

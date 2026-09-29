@@ -15,8 +15,11 @@ from app.schemas.plan import (
     PlanItemOut,
 )
 from app.services.plan_service import create_plan, get_plan, update_item_status, finalize_plan, get_active_plan, get_user_current_state
-from ai_service.generation.plan_gen import generate_topic_breakdown
 from ai_service.generation.topic_explainer import generate_topic_explanation
+from ai_service.generation.pipeline import TopicPipeline
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -26,12 +29,23 @@ def breakdown_topics(
     request: TopicBreakdownRequest,
     current_user: User = Depends(get_current_user),
 ):
-    """Break down a raw text into study concepts/topics."""
+    """Break down a raw text into study concepts/topics using the processing pipeline."""
     try:
-        topics = generate_topic_breakdown(request.raw_text)
+        validated_plan, error = TopicPipeline.process_request(request.raw_text)
+        if error:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error)
+
+        # Convert Pydantic model to the format expected by TopicBreakdownResponse
+        topics = [
+            {"topic_name": t.name, "duration_minutes": 60} # Defaulting to 60 as subtopics are now priority
+            for t in validated_plan.topics
+        ]
         return TopicBreakdownResponse(topics=topics)
+    except HTTPException:
+        raise
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        logger.error(f"Breakdown error: {exc}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An error occurred while processing your study request.") from exc
 
 
 @router.post("/explain", response_model=TopicExplainResponse)

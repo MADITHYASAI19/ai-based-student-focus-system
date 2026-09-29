@@ -203,7 +203,46 @@ The system implements persistent data storage with automatic state restoration:
 
 ---
 
-## 11. How to run it
+## 11. How to run it (copy-paste commands for Windows PowerShell)
 
-See **`run.txt`** (backend API + AI/ML service + database) and
-**`run.txt`** (React frontend) for exact copy-paste commands.
+> **Key insight**: `uvicorn` is NOT on the system PATH — always invoke it as
+> `python -m uvicorn`. The `run.txt` file was written for Unix; use the
+> corrected commands below on Windows.
+
+### Step 1 — Backend (FastAPI + AI/ML service)
+```powershell
+# from the repo root
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+- API → http://localhost:8000
+- Swagger UI → http://localhost:8000/docs
+- Health → http://localhost:8000/health
+
+### Step 2 — Frontend (React + Vite)
+```powershell
+# in a second terminal, from the repo root
+npm --prefix frontend install   # only needed once
+npm --prefix frontend run dev
+```
+- Frontend → http://localhost:5173
+
+### Step 3 — Seed data (first time only, idempotent)
+```powershell
+python app/scripts/seed_dev_data.py
+```
+
+### Notes
+- No Postgres, Redis, or Chroma server needed for local dev — everything
+  falls back gracefully (SQLite / in-process cache / embedded ChromaDB).
+- See **`run.txt`** for additional details (Docker/production stack).
+
+---
+
+## 12. Changelog (AI-assisted changes)
+
+| Date (IST) | Change | Reason |
+|---|---|---|
+| 2026-09-26 | `.env`: `DATABASE_URL` switched from `postgresql+psycopg2://...` → `sqlite:///./study_companion.db` | No Postgres server running locally; `study_companion.db` already exists |
+| 2026-09-26 | `.env`: `JWT_SECRET_KEY` set to a valid dev secret (was placeholder `generate_a_long_random_secret`) | App would fail JWT signing with the placeholder |
+| 2026-09-26 | Run command corrected to `python -m uvicorn` (not bare `uvicorn`) | `uvicorn` binary is not on the Windows PATH; `python -m uvicorn` always works |
+| 2026-09-26 | **Login 500 fix**: ran `python -m alembic upgrade head` to apply migration `5f90cb866138` (`add_persistence_fields`) | SQLite DB was missing `users.current_plan_id` and `users.current_session_id` columns — the ORM model was ahead of the DB schema. **Always run `alembic upgrade head` after switching DB or pulling new migrations.** |

@@ -6,21 +6,25 @@ from ai_service.generation.provider import complete_json
 
 logger = logging.getLogger(__name__)
 
-def generate_topic_breakdown(raw_text: str) -> list[Dict[str, Any]]:
+def generate_topic_breakdown(raw_text: str) -> str:
+    """
+    Calls the AI to generate a structured study breakdown.
+    Now returns the raw JSON string to be processed by the TopicPipeline.
+    """
     system_prompt = (
         "You are an expert study planner. The user will provide a text describing the topics they want to study. "
-        "Your task is to break down the provided text into clean, individual concepts or topics, and estimate the "
-        "duration in minutes required to study each topic. Output valid JSON in the format: "
-        '{"topics": [{"topic_name": "string", "duration_minutes": number}]}'
+        "Your task is to break down the provided text into a structured study plan. "
+        "Include a subject name, and a list of topics. Each topic must have a name and a list of subtopics. "
+        "Output strictly valid JSON in the format: "
+        '{"subject": "string", "topics": [{"name": "string", "subtopics": ["string"]}]}'
     )
-    
+
     try:
         content = complete_json([
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": raw_text}
         ])
-        data = json.loads(content)
-        return data.get("topics", [])
+        return content
     except Exception as e:
         logger.error(f"Failed to generate topic breakdown: {e}")
         raise ValueError("Failed to generate topic breakdown from the provided text.")

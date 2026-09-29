@@ -9,8 +9,8 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     CHROMA_URL: str = "http://localhost:8001"
     CHROMA_MODE: str = "embedded"
-    JWT_SECRET_KEY: str = "development-only-change-me"
-    AI_API_KEY: str = ""
+    JWT_SECRET_KEY: str | None = None
+    AI_API_KEYS: list[str] = []
     AI_API_BASE_URL: str = "https://api.groq.com/openai/v1"
     LLM_MODEL_NAME: str = "openai/gpt-oss-120b"
     FRONTEND_URL: str = "http://localhost:5173"

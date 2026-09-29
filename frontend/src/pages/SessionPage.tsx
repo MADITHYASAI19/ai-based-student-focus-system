@@ -194,8 +194,8 @@ export const SessionPage: React.FC = () => {
   return (
     <div className="space-y-8">
       {/* ── Page header ────────────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200/80">
-        <div>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-slate-200/80">
+        <div className="space-y-1">
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
             Focus Session
           </h1>
@@ -203,23 +203,30 @@ export const SessionPage: React.FC = () => {
             Study your planned topics, track focus, and build progress.
           </p>
         </div>
-        {selectedPlan && (
-          <div className="flex items-center gap-3 text-xs">
-            <div className="flex flex-col items-end">
-              <span className="font-semibold text-slate-600">{doneItems} / {totalItems} topics done</span>
-              <div className="mt-1 w-36 h-2 bg-slate-200 rounded-full overflow-hidden">
-                <div
-                  className="h-2 bg-indigo-500 rounded-full transition-all"
-                  style={{ width: `${progressPct}%` }}
-                />
-              </div>
+
+        {/* Study Dashboard Header */}
+        {selectedItem && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm min-w-[140px]">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Current Topic</p>
+              <p className="text-xs font-bold text-slate-900 truncate">{selectedItem.topic_name}</p>
             </div>
-            <span className="px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 font-bold border border-indigo-100">
-              {progressPct}%
-            </span>
+            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm min-w-[140px]">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Session Timer</p>
+              <p className="text-xs font-mono font-bold text-indigo-600">{formatTime(elapsedTime)}</p>
+            </div>
+            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm min-w-[140px]">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Focus Score</p>
+              <p className="text-xs font-bold text-slate-900">{focusScore}%</p>
+            </div>
+            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm min-w-[140px]">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Overall Progress</p>
+              <p className="text-xs font-bold text-slate-900">{progressPct}%</p>
+            </div>
           </div>
         )}
       </div>
+
 
       {error && (
         <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">
@@ -314,8 +321,8 @@ export const SessionPage: React.FC = () => {
 
               {plans.length > 0 && (
                 <>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">
+                  <div className="space-y-4">
+                    <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider">
                       Select Plan
                     </label>
                     <select
@@ -339,40 +346,54 @@ export const SessionPage: React.FC = () => {
                   </div>
 
                   {planItems.length > 0 && (
-                    <div className="space-y-2">
-                      <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                        Topics
-                      </label>
-                      <div className="space-y-1.5">
-                        {planItems.map((item) => (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedPlanItemId(item.id);
-                              setDurationMinutes(item.duration_minutes || 45);
-                            }}
-                            className={`flex w-full items-center justify-between rounded-xl border px-3.5 py-3 text-left transition-colors ${
-                              selectedPlanItemId === item.id
-                                ? 'border-indigo-400 bg-indigo-50 shadow-sm'
-                                : 'border-slate-200 bg-white hover:border-indigo-200'
-                            }`}
-                          >
-                            <span>
-                              <span className="block text-sm font-bold text-slate-800">{item.topic_name}</span>
-                              <span className="block text-xs text-slate-500 mt-0.5">{item.duration_minutes} min</span>
-                            </span>
-                            <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${
-                              item.status === 'done'
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : item.status === 'skipped'
-                                ? 'bg-slate-100 text-slate-500'
-                                : 'bg-amber-50 text-amber-700 border border-amber-200'
-                            }`}>
-                              {item.status === 'done' ? '✓ Done' : item.status === 'skipped' ? 'Skipped' : 'Pending'}
-                            </span>
-                          </button>
-                        ))}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                          Session Roadmap
+                        </label>
+                        <span className="text-[10px] font-bold text-indigo-500">{doneItems}/{totalItems} Complete</span>
+                      </div>
+                      <div className="space-y-2">
+                        {planItems.map((item) => {
+                          const isActive = selectedPlanItemId === item.id;
+                          const isDone = item.status === 'done';
+
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedPlanItemId(item.id);
+                                setDurationMinutes(item.duration_minutes || 45);
+                              }}
+                              className={`flex w-full items-center justify-between rounded-xl border px-3.5 py-3 text-left transition-all ${
+                                isActive
+                                  ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20 shadow-sm'
+                                  : isDone
+                                    ? 'border-slate-200 bg-slate-50 opacity-60'
+                                    : 'border-slate-200 bg-white hover:border-indigo-200'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <span className={`w-2 h-2 rounded-full ${
+                                  isDone ? 'bg-emerald-500' : isActive ? 'bg-indigo-500 animate-pulse' : 'bg-slate-300'
+                                }`} />
+                                <span className={`text-sm font-bold ${isActive ? 'text-indigo-900' : isDone ? 'text-slate-500' : 'text-slate-800'}`}>
+                                  {item.topic_name}
+                                </span>
+                              </div>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                                isDone
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : isActive
+                                    ? 'bg-indigo-100 text-indigo-700'
+                                    : 'bg-slate-100 text-slate-500'
+                              }`}>
+                                {isDone ? '✓' : isActive ? 'Active' : 'Pending'}
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
