@@ -1,8 +1,10 @@
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class StudyDocumentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     topic_id: int
     filename: str
@@ -16,9 +18,6 @@ class StudyDocumentOut(BaseModel):
     estimated_hours: float | None = None
     uploaded_at: datetime
     processed_at: datetime | None = None
-
-    class Config:
-        from_attributes = True
 
 
 class TopicEstimateOut(BaseModel):

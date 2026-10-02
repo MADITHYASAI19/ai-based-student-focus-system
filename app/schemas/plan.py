@@ -65,7 +65,7 @@ class TopicBreakdownResponse(BaseModel):
 
 
 class ItemStatusUpdate(BaseModel):
-    status: str  # pending | done | skipped
+    status: str  # pending | in_progress | done | skipped
 
 
 class TopicExplainRequest(BaseModel):

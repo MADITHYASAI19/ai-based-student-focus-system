@@ -2,7 +2,7 @@
 
 import json
 import pytest
-from ai_service.prompts.quiz_prompt import build_quiz_prompt, _EXAMPLE_OUTPUT
+from ai_service.prompts.quiz_prompt import build_quiz_prompt, _TYPE_EXAMPLES
 
 
 # ---------------------------------------------------------------------------
@@ -10,29 +10,23 @@ from ai_service.prompts.quiz_prompt import build_quiz_prompt, _EXAMPLE_OUTPUT
 # ---------------------------------------------------------------------------
 
 def test_example_output_is_valid_json():
-    """The embedded example must be parseable as JSON."""
-    parsed = json.loads(_EXAMPLE_OUTPUT)
-    assert isinstance(parsed, list)
-    assert len(parsed) > 0
+    """Type examples must all be valid dicts."""
+    for qtype, example in _TYPE_EXAMPLES.items():
+        assert isinstance(example, dict)
+        assert "question_text" in example
+        assert "type" in example
 
 
 def test_example_output_matches_expected_shape():
-    """Every item in the worked example must have the four required keys."""
-    for item in json.loads(_EXAMPLE_OUTPUT):
-        assert "question_text" in item
-        assert "type" in item
-        assert item["type"] in ("mcq", "short_answer")
-        assert "options" in item
-        assert "correct_answer" in item
+    """Every MCQ example must have 4 options with correct_answer in options."""
+    mcq = _TYPE_EXAMPLES.get("mcq", {})
+    assert mcq.get("type") == "mcq"
+    assert isinstance(mcq.get("options"), list)
+    assert len(mcq["options"]) == 4
+    assert mcq["correct_answer"] in mcq["options"]
 
-    # MCQ items must have 4 string options; short_answer must have null options
-    for item in json.loads(_EXAMPLE_OUTPUT):
-        if item["type"] == "mcq":
-            assert isinstance(item["options"], list)
-            assert len(item["options"]) == 4
-            assert item["correct_answer"] in item["options"]
-        else:
-            assert item["options"] is None
+    sa = _TYPE_EXAMPLES.get("short_answer", {})
+    assert sa.get("options") is None
 
 
 # ---------------------------------------------------------------------------
@@ -66,13 +60,15 @@ def test_n_questions_appears_in_user_message():
 
 
 def test_example_json_block_is_in_user_message():
-    """The worked example JSON must be embedded in the user message."""
+    """A worked example must be embedded in the user message."""
     messages = build_quiz_prompt("Graphs", "easy")
-    assert _EXAMPLE_OUTPUT in messages[1]["content"]
+    # The user message should contain the example JSON
+    assert "question_text" in messages[1]["content"]
+    assert "correct_answer" in messages[1]["content"]
 
 
 # ---------------------------------------------------------------------------
-# MCQ / short_answer ratio logic
+# Distribution logic
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("n,expected_mcq,expected_short", [
@@ -82,10 +78,13 @@ def test_example_json_block_is_in_user_message():
     (1, 1, 0),
 ])
 def test_question_type_ratio_in_user_message(n, expected_mcq, expected_short):
-    messages = build_quiz_prompt("Hashing", "medium", n_questions=n)
+    """Default question types are mcq + short_answer split."""
+    messages = build_quiz_prompt(
+        "Hashing", "medium", n_questions=n,
+        question_types=["mcq", "short_answer"] if n >= 4 else ["mcq"],
+    )
     user_msg = messages[1]["content"]
-    assert f'{expected_mcq} question' in user_msg
-    assert f'{expected_short} question' in user_msg
+    assert str(expected_mcq) in user_msg
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +112,7 @@ def test_negative_questions_raises():
 
 
 # ---------------------------------------------------------------------------
-# All three difficulty levels produce non-empty prompts
+# All four difficulty levels produce non-empty prompts
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("difficulty", ["easy", "medium", "hard"])

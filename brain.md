@@ -50,8 +50,8 @@ app/                          # FastAPI backend
 ├── core/                     # config.py (Settings/env), database.py, security.py (JWT/hash), cache.py (Redis/TTL fallback)
 ├── models/models.py          # SQLAlchemy ORM models (single file, see §5)
 ├── routers/                  # auth, plans, sessions, quizzes, doubts, documents
-├── schemas/                  # Pydantic request/response models (mirrors routers)
-├── services/                 # business logic: auth, plan, session, quiz, doubt, document
+├── schemas/                  # Pydantic request/response models (mirrors routers) + face_tracking.py
+├── services/                 # business logic: auth, plan, session, quiz, doubt, document, face_tracking
 ├── scripts/seed_dev_data.py  # idempotent dev seed (Mathematics/Biology subjects + topics)
 └── main.py                   # create_app(), CORS, router registration, /health
 
@@ -107,6 +107,14 @@ run.txt                       # old manual run notes (superseded by RUN_BACKEND.
 | POST | `/api/sessions/{id}/events` | ✅ | Record a focus event (phone_detected/away/sleepy/tab_switch) |
 | GET | `/api/quizzes/{topic_id}` | ✅ | Generate/retrieve cached quiz |
 | POST | `/api/quizzes/{quiz_id}/attempt` | ✅ | Submit answers, server-graded |
+| POST | `/api/quizzes/generate` | ✅ | Rich quiz generation (multi-type, n_questions, time_limit, face_tracking, fullscreen, pdf_source_mode) |
+| POST | `/api/quizzes/submit` | ✅ | Rich quiz submission with full per-question results |
+| GET | `/api/quizzes/topics/available` | ✅ | Topics the student can be quizzed on |
+| GET | `/api/quizzes/history` | ✅ | Student's quiz attempt history |
+| GET | `/api/quizzes/topics/{topic_id}/stats` | ✅ | Per-topic performance stats |
+| POST | `/api/quizzes/attempts/{attempt_id}/face-tracking-events` | ✅ | Record face tracking event |
+| GET | `/api/quizzes/attempts/{attempt_id}/face-tracking-events` | ✅ | Get all face tracking events for attempt |
+| GET | `/api/quizzes/attempts/{attempt_id}/face-tracking-summary` | ✅ | Get face tracking summary statistics |
 | POST | `/api/doubts` | ✅ | RAG-powered doubt solver |
 | GET/POST | `/api/topics/{topic_id}/documents` | ✅ | List / upload study docs for a topic |
 | POST | `/api/topics/focus/documents` | ✅ | Upload doc tied to a live session |
@@ -131,7 +139,8 @@ run.txt                       # old manual run notes (superseded by RUN_BACKEND.
 - **PlanItem** — belongs to StudyPlan + Topic; scheduled_date, duration_minutes, status (pending/done/skipped)
 - **StudySession** — belongs to User; optional plan_item/document link; subtopic, explanation_mode, duration_minutes, focus_score, productivity_score
 - **FocusEvent** — belongs to StudySession; event_type (phone_detected/away/sleepy/tab_switch); timestamp
-- **QuizAttempt** — belongs to User; quiz_id, score, completed_at
+- **QuizAttempt** — belongs to User; quiz_id, score, completed_at; **NEW**: status (not_started/in_progress/paused/submitted/completed/cancelled), topic_id, difficulty, question_type, question_count, total_points, percentage, correct_count, incorrect_count, unanswered_count, start_time, time_limit_minutes, question_results (JSON)
+- **FaceTrackingEvent** — belongs to QuizAttempt; event_type (face_detected/face_not_detected/multiple_faces/focus_lost/focus_returned); timestamp; duration_seconds; event_metadata (JSON)
 
 ## 6. Migrations (`alembic/versions/`, run in this order)
 
@@ -141,6 +150,7 @@ run.txt                       # old manual run notes (superseded by RUN_BACKEND.
 4. `add_study_documents` — study_documents table
 5. `add_learning_session_config` — session config fields
 6. `5f90cb866138` — add_persistence_fields (study_plans.is_active, study_plans.progress_percentage, users.current_plan_id, users.current_session_id)
+7. `353bb984d035` — add_face_tracking_events (face_tracking_events table for quiz proctoring)
 
 ---
 
@@ -198,7 +208,7 @@ The system implements persistent data storage with automatic state restoration:
 - Tests (`tests/`) run fully offline: SQLite in-memory DB + mocked LLM calls. `tests/test_embeddings.py` and `tests/test_embedding_store.py` are excluded from the default run because they need a real embedding model.
 - Focus detection (phone/away/sleepy/tab-switch) runs **client-side** in the browser via `@mediapipe/tasks-vision` (see `frontend/src/hooks/useFocusMonitoring.ts`) — events are POSTed to `/api/sessions/{id}/events`. There is no separate "ML server" for this; it's not part of `ai_service/`.
 - `ai_service/` (LLM + RAG + embeddings) is the actual "AI/ML backend" — quiz generation, doubt solving, plan generation, document analysis, topic explanation all flow through it.
-- Expected test result: **56 passed** with the excluded files above.
+- Expected test result: **70 passed** with the excluded files above.
 - Seed script (`app/scripts/seed_dev_data.py`) is idempotent — safe to re-run.
 
 ---
@@ -246,3 +256,11 @@ python app/scripts/seed_dev_data.py
 | 2026-09-26 | `.env`: `JWT_SECRET_KEY` set to a valid dev secret (was placeholder `generate_a_long_random_secret`) | App would fail JWT signing with the placeholder |
 | 2026-09-26 | Run command corrected to `python -m uvicorn` (not bare `uvicorn`) | `uvicorn` binary is not on the Windows PATH; `python -m uvicorn` always works |
 | 2026-09-26 | **Login 500 fix**: ran `python -m alembic upgrade head` to apply migration `5f90cb866138` (`add_persistence_fields`) | SQLite DB was missing `users.current_plan_id` and `users.current_session_id` columns — the ORM model was ahead of the DB schema. **Always run `alembic upgrade head` after switching DB or pulling new migrations.** |
+| 2026-09-29 | **Frontend compilation fix**: `PlannerPage.tsx` and `SessionPage.tsx` | Fixed missing state variables, removed unused imports, restored history state and focus hooks for successful `tsc -b && vite build`. |
+| 2026-09-29 | **Pydantic v2 modernization**: `app/schemas/documents.py` | Migrated deprecated Pydantic v1 `class Config` to Pydantic v2 `ConfigDict(from_attributes=True)`. |
+| 2026-09-29 | **Pytest speed & exclusion fix**: `pytest.ini` and `ai_service/embeddings/embed.py` | Lazy-loaded `SentenceTransformer` inside `_get_model()` and configured `pytest.ini` with test exclusion flags, cutting test discovery & import overhead from 50+ seconds to instant. |
+| 2026-09-29 | **Auth endpoint compatibility**: `app/routers/auth.py` | Updated `/api/auth/login` to accept both JSON request payloads and OAuth2 form-urlencoded bodies, enabling all API tests and browser login to work concurrently. |
+| 2026-09-29 | **Topic breakdown / generation fix**: `app/core/config.py`, `ai_service/generation/provider.py`, `ai_service/generation/key_manager.py` | Fixed `AI_API_KEY` loading in `Settings`, added key rotation failover without `UnboundLocalError`, stripped key whitespace, and validated `TopicPipeline` with real Groq LLM integration. Total tests passed: **68/68**. |
+| 2026-09-29 | **Topic Processing Pipeline & UI Hierarchy**: `TopicPipeline`, `ItemStatus`, `PlannerPage.tsx`, `SessionPage.tsx` | Implemented intent extraction, anti-redundancy caching, and sanitization in `TopicPipeline`. Added `in_progress` item state support. Built 3-part roadmap display (Current Study / Completed / Remaining) in `SessionPage.tsx` and status tabs (All / In Progress / Planned / Completed) with full persistence in `PlannerPage.tsx`. Total tests passed: **70/70**. |
+| 2026-09-30 | **Login persistence fix**: `frontend/src/contexts/AuthContext.tsx`, `frontend/src/components/ProtectedRoute.tsx` | Fixed page-refresh redirect-to-login bug. Root cause: `useState(null)` meant the token was `null` for one render before `useEffect` could read `localStorage`, causing `ProtectedRoute` to redirect. Fix: synchronous lazy initializer `useState(() => localStorage.getItem(TOKEN_KEY))` so token and cached `userState` are available on the very first render. Added `isLoading` flag so `ProtectedRoute` shows a spinner instead of redirecting while the server state is being fetched. Frontend build: **0 TypeScript errors**. |
+| 2026-10-01 | **Doubt Solver & Quiz Generator Major Upgrade**: Multiple files | **Doubt Solver**: Integrated centralized GroqKeyManager for API key rotation (replaced direct API key usage). **Quiz Generator**: Added face tracking infrastructure (FaceTrackingEvent model, service, API endpoints), full-screen mode with exit detection, quiz status management (not_started/in_progress/paused/submitted), test rules screen, PDF integration (topic_knowledge/pdf_only/topic_pdf modes), enhanced QuizPage UI with proctoring options. **Database**: Added face_tracking_events table (migration 353bb984d035). **Frontend**: Added face tracking UI, fullscreen detection, quiz pause/resume, PDF source mode selection. All features optional by default. See `UPGRADE_SUMMARY.md` for complete details. |

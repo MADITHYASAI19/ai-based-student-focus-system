@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePlan } from '../hooks/usePlan';
-import { breakdownTopics, updatePlanItemStatus, getAllPlans, finalizePlan } from '../api/client';
-import type { StudyPlanCreate, TopicConcept } from '../api/types';
+import { breakdownTopics, updatePlanItemStatus, finalizePlan } from '../api/client';
+import type { StudyPlanCreate, TopicConcept, PlanItemOut } from '../api/types';
 
 export const PlannerPage: React.FC = () => {
   const { plan, loading, error, hasPlan, createPlan, refetch } = usePlan();
@@ -15,29 +15,45 @@ export const PlannerPage: React.FC = () => {
   const [finalizing, setFinalizing] = useState(false);
   const [documentMessage, setDocumentMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [markingItem, setMarkingItem] = useState<number | null>(null);
+  const [filterTab, setFilterTab] = useState<'all' | 'in_progress' | 'planned' | 'completed'>('all');
   const navigate = useNavigate();
 
-  const handleMarkItemStatus = async (itemId: number, newStatus: 'done' | 'pending' | 'skipped') => {
+  const handleMarkItemStatus = async (itemId: number, newStatus: 'pending' | 'in_progress' | 'done' | 'skipped') => {
     setMarkingItem(itemId);
     try {
       await updatePlanItemStatus(itemId, newStatus);
-      refetch();
-    } catch (err) {
+      await refetch();
+    } catch {
       setDocumentMessage({ type: 'error', text: 'Failed to update topic status.' });
     } finally {
       setMarkingItem(null);
     }
   };
 
+  const handleStartStudy = async (item: PlanItemOut) => {
+    try {
+      if (item.status !== 'in_progress') {
+        await updatePlanItemStatus(item.id, 'in_progress');
+      }
+      navigate('/session');
+    } catch {
+      navigate('/session');
+    }
+  };
+
   const handleGenerateTopics = async () => {
     if (!rawTopicsText.trim()) return;
     setIsGeneratingTopics(true);
+    setDocumentMessage(null);
     try {
       const res = await breakdownTopics(rawTopicsText.trim());
       setGeneratedTopics(res.topics || []);
-    } catch (err) {
-      console.error(err);
-      setDocumentMessage({ type: 'error', text: 'Failed to generate topics from your input.' });
+      if (!res.topics || res.topics.length === 0) {
+        setDocumentMessage({ type: 'error', text: 'No topics could be extracted. Please enter more specific subject details.' });
+      }
+    } catch (err: any) {
+      const detail = err.response?.data?.detail || err.message || 'We could not generate your study plan right now. Please try again.';
+      setDocumentMessage({ type: 'error', text: detail });
     } finally {
       setIsGeneratingTopics(false);
     }
@@ -99,61 +115,21 @@ export const PlannerPage: React.FC = () => {
     );
   }
 
+  const items: PlanItemOut[] = plan?.items || [];
+  const inProgressItems = items.filter((i) => i.status === 'in_progress');
+  const plannedItems = items.filter((i) => i.status === 'pending');
+  const completedItems = items.filter((i) => i.status === 'done');
+  const doneCount = completedItems.length;
+  const progressPct = items.length > 0 ? Math.round((doneCount / items.length) * 100) : 0;
+  const totalDuration = items.reduce((acc, curr) => acc + (curr.duration_minutes || 0), 0);
 
-
-  const PlanItemRow: React.FC<{
-  item: any;
-  onMarkDone: (id: number) => void;
-  onNavigate: () => void;
-  isDone?: boolean;
-}> = ({ item, onMarkDone, onNavigate, isDone }) => {
-  return (
-    <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white rounded-xl border border-slate-100 hover:border-indigo-200 transition-all shadow-sm">
-      <div className="flex items-center gap-3">
-        <span className={`w-3 h-3 rounded-full flex-shrink-0 ${
-          isDone ? 'bg-emerald-500' :
-          item.status === 'in_progress' ? 'bg-indigo-500' : 'bg-amber-400'
-        }`} />
-        <div>
-          <span className="text-sm font-bold text-slate-900">{item.topic_name}</span>
-          <div className="flex items-center gap-3 text-xs text-slate-500 mt-0.5">
-            <span>{item.duration_minutes} min</span>
-            <span>•</span>
-            <span className={`capitalize font-semibold ${
-              isDone ? 'text-emerald-600' :
-              item.status === 'in_progress' ? 'text-indigo-600' : 'text-amber-600'
-            }`}>{item.status}</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2 flex-wrap">
-        {!isDone && (
-          <button
-            onClick={() => void onMarkDone(item.id)}
-            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-all"
-          >
-            ✓ Done
-          </button>
-        )}
-        {isDone && (
-          <button
-            onClick={() => void onMarkDone(item.id)}
-            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-50 text-slate-500 hover:bg-slate-100 border border-slate-200 transition-all"
-          >
-            Undo Done
-          </button>
-        )}
-        <button
-          onClick={onNavigate}
-          className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all flex items-center gap-1.5"
-        >
-          ▶ Study
-        </button>
-      </div>
-    </div>
-  );
-};
+  const displayedItems = filterTab === 'all'
+    ? items
+    : filterTab === 'in_progress'
+    ? inProgressItems
+    : filterTab === 'planned'
+    ? plannedItems
+    : completedItems;
 
   return (
     <div className="space-y-8">
@@ -164,7 +140,7 @@ export const PlannerPage: React.FC = () => {
             Study Planner
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Organize study goals, track schedules, and launch dedicated focus sessions.
+            Track planned, in-progress, and completed topics with automatic progress synchronization.
           </p>
         </div>
         <button
@@ -179,63 +155,73 @@ export const PlannerPage: React.FC = () => {
       </div>
 
       {documentMessage && (
-        <div className={`rounded-xl border px-4 py-3 text-sm ${documentMessage.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700'}`}>
-          {documentMessage.text}
+        <div className={`rounded-xl border px-4 py-3 text-sm flex items-center justify-between ${documentMessage.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
+          <span>{documentMessage.text}</span>
+          <button onClick={() => setDocumentMessage(null)} className="text-xs font-bold opacity-60 hover:opacity-100">✕</button>
         </div>
       )}
 
       {/* Overview Stats */}
       {hasPlan && (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                 </svg>
               </div>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Topics</p>
-                <p className="text-2xl font-extrabold text-slate-900">{items.length}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Total Topics</p>
+                <p className="text-xl font-extrabold text-slate-900">{items.length}</p>
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                <span className="text-base font-black">◉</span>
               </div>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Planned Duration</p>
-                <p className="text-2xl font-extrabold text-slate-900">{totalDuration} mins</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">In Progress</p>
+                <p className="text-xl font-extrabold text-amber-600">{inProgressItems.length}</p>
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center font-bold">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                <span className="text-base font-black">✓</span>
               </div>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Target Exam</p>
-                <p className="text-sm font-bold text-slate-900 truncate max-w-[170px]">
-                  {plan?.exam_deadline ? new Date(plan.exam_deadline).toLocaleDateString() : 'Upcoming'}
-                </p>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Completed</p>
+                <p className="text-xl font-extrabold text-emerald-600">{completedItems.length}</p>
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center font-bold">
+                <span className="text-base font-black">○</span>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Planned</p>
+                <p className="text-xl font-extrabold text-slate-700">{plannedItems.length}</p>
               </div>
             </div>
           </div>
 
           {/* Progress bar */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-bold text-slate-700">Plan Progress</p>
-              <span className="text-sm font-extrabold text-indigo-600">{doneCount} / {items.length} done · {progressPct}%</span>
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-bold text-slate-800">Overall Study Plan Progress</span>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {completedItems.length} of {items.length} topics finished · {totalDuration} total minutes
+                </p>
+              </div>
+              <span className="text-lg font-black text-indigo-600">{progressPct}%</span>
             </div>
             <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
               <div
-                className="h-3 bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full transition-all"
+                className="h-3 bg-gradient-to-r from-indigo-500 via-amber-500 to-emerald-500 rounded-full transition-all duration-500"
                 style={{ width: `${progressPct}%` }}
               />
             </div>
@@ -243,14 +229,13 @@ export const PlannerPage: React.FC = () => {
         </>
       )}
 
-
       {/* Creation Modal / Form */}
       {showCreateForm && (
         <div className="bg-white rounded-2xl shadow-lg border border-indigo-100 p-6 sm:p-8 transition-all animate-in fade-in duration-200">
           <div className="flex items-center justify-between pb-4 mb-6 border-b border-slate-100">
             <div>
               <h2 className="text-lg font-bold text-slate-900">Create Study Plan</h2>
-              <p className="text-xs text-slate-500">Add a subject topic and set study time</p>
+              <p className="text-xs text-slate-500">Enter what you want to study. Our AI will clean, organize, and structure the topics.</p>
             </div>
             <button
               type="button"
@@ -264,33 +249,45 @@ export const PlannerPage: React.FC = () => {
           <form onSubmit={handleCreatePlan} className="space-y-5">
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                Give me all the topics you want to study
+                What do you want to study?
               </label>
               <textarea
                 required
                 value={rawTopicsText}
                 onChange={(e) => setRawTopicsText(e.target.value)}
-                placeholder="e.g. I want to study organic chemistry basics, specifically alkanes and alkenes, and also some basic biology..."
+                placeholder="e.g. I want to learn machine learning from basics to advanced, covering supervised learning, linear regression, gradient descent..."
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm h-32"
               />
               <button
                 type="button"
                 onClick={handleGenerateTopics}
                 disabled={isGeneratingTopics || !rawTopicsText.trim()}
-                className="mt-2 px-4 py-2 text-xs font-semibold rounded-lg bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50"
+                className="mt-2.5 px-4 py-2 text-xs font-bold rounded-xl bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 transition-all cursor-pointer flex items-center gap-2"
               >
-                {isGeneratingTopics ? 'Analyzing...' : 'Generate Clean Topics'}
+                {isGeneratingTopics ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Analyzing & Structuring Topics...
+                  </>
+                ) : (
+                  'Generate Clean Topics'
+                )}
               </button>
             </div>
 
             {generatedTopics.length > 0 && (
-              <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
-                <p className="text-sm font-bold text-slate-900 mb-3">Total Concepts Detected: {generatedTopics.length}</p>
-                <div className="space-y-2">
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold uppercase tracking-wider text-indigo-700">
+                    Generated Clean Topics ({generatedTopics.length})
+                  </p>
+                  <span className="text-xs font-medium text-slate-500">Auto-normalized</span>
+                </div>
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                   {generatedTopics.map((topic, i) => (
-                    <div key={i} className="flex justify-between items-center text-sm bg-white p-2 rounded-lg border border-indigo-100">
-                      <span className="font-semibold text-slate-700">{topic.topic_name}</span>
-                      <span className="text-indigo-600 font-bold">{topic.duration_minutes} min</span>
+                    <div key={i} className="flex justify-between items-center text-sm bg-white px-3 py-2.5 rounded-xl border border-indigo-100 shadow-2xs">
+                      <span className="font-semibold text-slate-800">{topic.topic_name}</span>
+                      <span className="text-indigo-600 font-bold text-xs">{topic.duration_minutes} min</span>
                     </div>
                   ))}
                 </div>
@@ -319,98 +316,189 @@ export const PlannerPage: React.FC = () => {
               </button>
               <button
                 type="submit"
-                disabled={creating}
+                disabled={creating || generatedTopics.length === 0}
                 className="px-5 py-2.5 text-sm font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/20 disabled:opacity-50 transition-all cursor-pointer"
               >
-                {creating ? 'Saving Plan...' : 'Confirm Plan'}
+                {creating ? 'Saving Plan...' : 'Confirm & Save Plan'}
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* Plan Items List */}
+      {/* Plan Items List with Clear State Categorization */}
       {hasPlan && plan ? (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+          {/* Header & Controls */}
+          <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
             <div className="flex items-center gap-3">
-              <h2 className="font-bold text-slate-900 text-base">Current Study Plan Items</h2>
-              {plan.is_active && (
-                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold">Active</span>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-medium text-slate-500">Plan ID: #{plan.id}</span>
-              {!plan.is_active && (
+              <h2 className="font-extrabold text-slate-900 text-base">My Study Plan</h2>
+              {plan.is_active ? (
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                  Active Plan
+                </span>
+              ) : (
                 <button
                   onClick={handleFinalizePlan}
                   disabled={finalizing}
-                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all"
+                  className="px-2.5 py-1 text-xs font-bold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-all shadow-xs"
                 >
-                  {finalizing ? 'Finalizing...' : 'Finalize Plan'}
+                  {finalizing ? 'Activating...' : 'Set as Active Plan'}
                 </button>
               )}
             </div>
+
+            {/* Filter Tabs */}
+            <div className="flex items-center gap-1.5 bg-slate-200/60 p-1 rounded-xl text-xs font-bold">
+              <button
+                onClick={() => setFilterTab('all')}
+                className={`px-3 py-1.5 rounded-lg transition-all ${filterTab === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                All ({items.length})
+              </button>
+              <button
+                onClick={() => setFilterTab('in_progress')}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${filterTab === 'in_progress' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                <span>◉</span> In Progress ({inProgressItems.length})
+              </button>
+              <button
+                onClick={() => setFilterTab('planned')}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${filterTab === 'planned' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                <span>○</span> Planned ({plannedItems.length})
+              </button>
+              <button
+                onClick={() => setFilterTab('completed')}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${filterTab === 'completed' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                <span>✓</span> Completed ({completedItems.length})
+              </button>
+            </div>
           </div>
 
-          {items.length > 0 ? (
+          {/* Items Display */}
+          {displayedItems.length > 0 ? (
             <div className="divide-y divide-slate-100">
-              {items.map((item, idx) => {
+              {displayedItems.map((item: PlanItemOut, idx: number) => {
                 const currentTopicName = item.topic_name || `Topic #${item.topic_id}`;
-                const subject = 'My Topics';
+                const isInProgress = item.status === 'in_progress';
+                const isDone = item.status === 'done';
+                const isPlanned = item.status === 'pending';
 
                 return (
                   <div
                     key={item.id || idx}
-                    className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/70 transition-colors"
+                    className={`p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
+                      isInProgress ? 'bg-amber-50/40 border-l-4 border-l-amber-500' :
+                      isDone ? 'bg-emerald-50/20 hover:bg-emerald-50/40' : 'hover:bg-slate-50/70'
+                    }`}
                   >
-                    <div className="flex items-center gap-3">
-                      {/* Status indicator */}
-                      <span className={`w-3 h-3 rounded-full flex-shrink-0 ${
-                        item.status === 'done' ? 'bg-emerald-500' :
-                        item.status === 'skipped' ? 'bg-slate-300' : 'bg-amber-400'
-                      }`} />
+                    <div className="flex items-center gap-3.5">
+                      {/* Visual status icon */}
+                      {isDone ? (
+                        <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-sm flex-shrink-0">
+                          ✓
+                        </div>
+                      ) : isInProgress ? (
+                        <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center font-black text-xs flex-shrink-0 animate-pulse">
+                          ◉
+                        </div>
+                      ) : (
+                        <div className="w-7 h-7 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center font-semibold text-xs flex-shrink-0 border border-slate-200">
+                          ○
+                        </div>
+                      )}
+
                       <div>
-                        <span className="text-sm font-bold text-slate-900">{currentTopicName}</span>
-                        <div className="flex items-center gap-3 text-xs text-slate-500 mt-0.5">
-                          <span>{item.duration_minutes} min</span>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-sm font-bold ${isDone ? 'line-through text-slate-500' : 'text-slate-900'}`}>
+                            {currentTopicName}
+                          </span>
+                          {/* Distinct Status Badges */}
+                          {isInProgress && (
+                            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide rounded-md bg-amber-100 text-amber-800 border border-amber-200">
+                              IN PROGRESS
+                            </span>
+                          )}
+                          {isPlanned && (
+                            <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-md bg-slate-100 text-slate-600 border border-slate-200">
+                              PLANNED
+                            </span>
+                          )}
+                          {isDone && (
+                            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              COMPLETED
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
+                          <span>{item.duration_minutes} minutes</span>
                           <span>•</span>
-                          <span className={`capitalize font-semibold ${
-                            item.status === 'done' ? 'text-emerald-600' :
-                            item.status === 'skipped' ? 'text-slate-400' : 'text-amber-600'
-                          }`}>{item.status}</span>
+                          <span>ID #{item.id}</span>
                         </div>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap">
-                      {item.status !== 'done' && (
-                        <button
-                          onClick={() => void handleMarkItemStatus(item.id, 'done')}
-                          disabled={markingItem === item.id}
-                          className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-all"
-                        >
-                          {markingItem === item.id ? '...' : '✓ Done'}
-                        </button>
+                      {/* State transition triggers */}
+                      {isPlanned && (
+                        <>
+                          <button
+                            onClick={() => void handleStartStudy(item)}
+                            className="px-3.5 py-1.5 text-xs font-bold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                          >
+                            ▶ Study
+                          </button>
+                          <button
+                            onClick={() => void handleMarkItemStatus(item.id, 'done')}
+                            disabled={markingItem === item.id}
+                            className="px-3 py-1.5 text-xs font-bold rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-all cursor-pointer"
+                          >
+                            {markingItem === item.id ? '...' : '✓ Done'}
+                          </button>
+                        </>
                       )}
-                      {item.status === 'done' && (
+
+                      {isInProgress && (
+                        <>
+                          <button
+                            onClick={() => void handleStartStudy(item)}
+                            className="px-3.5 py-1.5 text-xs font-bold rounded-xl bg-amber-600 hover:bg-amber-700 text-white shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                          >
+                            ▶ Resume Session
+                          </button>
+                          <button
+                            onClick={() => void handleMarkItemStatus(item.id, 'done')}
+                            disabled={markingItem === item.id}
+                            className="px-3 py-1.5 text-xs font-bold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs transition-all cursor-pointer"
+                          >
+                            {markingItem === item.id ? '...' : '✓ Finish'}
+                          </button>
+                          <button
+                            onClick={() => void handleMarkItemStatus(item.id, 'pending')}
+                            disabled={markingItem === item.id}
+                            className="px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-700"
+                          >
+                            Reset
+                          </button>
+                        </>
+                      )}
+
+                      {isDone && (
                         <button
                           onClick={() => void handleMarkItemStatus(item.id, 'pending')}
                           disabled={markingItem === item.id}
-                          className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-50 text-slate-500 hover:bg-slate-100 border border-slate-200 transition-all"
+                          className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200 transition-all cursor-pointer"
                         >
-                          Undo Done
+                          {markingItem === item.id ? '...' : 'Reopen Topic'}
                         </button>
                       )}
-                      <button
-                        onClick={() => navigate('/session')}
-                        className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all flex items-center gap-1.5"
-                      >
-                        ▶ Study
-                      </button>
+
                       <button
                         onClick={() => navigate('/quiz')}
-                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-all"
+                        className="px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200 transition-all cursor-pointer"
                       >
                         Quiz
                       </button>
@@ -418,11 +506,10 @@ export const PlannerPage: React.FC = () => {
                   </div>
                 );
               })}
-
             </div>
           ) : (
-            <div className="p-8 text-center text-slate-500">
-              <p className="text-sm">No items in this plan yet. Click "Add / Replace Plan" above to create scheduled items.</p>
+            <div className="p-12 text-center text-slate-500">
+              <p className="text-sm font-semibold">No topics match the selected tab filter ({filterTab}).</p>
             </div>
           )}
         </div>
@@ -435,7 +522,7 @@ export const PlannerPage: React.FC = () => {
           </div>
           <h3 className="text-lg font-bold text-slate-900 mb-1.5">No Study Plan Created Yet</h3>
           <p className="text-sm text-slate-500 max-w-sm mx-auto mb-6">
-            Get started by creating your customized study plan to schedule topics and track progress.
+            Enter what you want to study above, and our AI pipeline will create your organized, scheduled study plan.
           </p>
           <button
             onClick={() => setShowCreateForm(true)}

@@ -7,7 +7,6 @@ import {
   getAllPlans,
   getSessionHistory,
   updatePlanItemStatus,
-  getActivePlan,
 } from '../api/client';
 import { useFocusMonitoring } from '../hooks/useFocusMonitoring';
 import type { MonitoringStrictness, StudyPlanOut, StudySessionOut } from '../api/types';
@@ -64,7 +63,6 @@ export const SessionPage: React.FC = () => {
 
   // Session history
   const [history, setHistory] = useState<StudySessionOut[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
 
   // Marking done / updating
   const [markingDone, setMarkingDone] = useState(false);
@@ -104,11 +102,9 @@ export const SessionPage: React.FC = () => {
 
   // ── Load session history ───────────────────────────────────────────────────
   useEffect(() => {
-    setHistoryLoading(true);
     getSessionHistory()
       .then(setHistory)
-      .catch(() => {})
-      .finally(() => setHistoryLoading(false));
+      .catch(() => {});
   }, []);
 
   // ── Derive selected plan and item ─────────────────────────────────────────
@@ -186,46 +182,168 @@ export const SessionPage: React.FC = () => {
   const isSessionActive = session && !session.ended_at;
   const isSessionEnded = session && session.ended_at;
 
-  // ── Progress stats ─────────────────────────────────────────────────────────
+  // ── Progress stats (Requirement 7) ─────────────────────────────────────────
   const totalItems = planItems.length;
-  const doneItems = planItems.filter((item) => item.status === 'done').length;
+  const completedItems = planItems.filter((item) => item.status === 'done');
+  const remainingItems = planItems.filter((item) => item.status !== 'done' && item.id !== selectedPlanItemId);
+  const doneItems = completedItems.length;
   const progressPct = totalItems ? Math.round((doneItems / totalItems) * 100) : 0;
+  const remainingDuration = remainingItems.reduce((acc, curr) => acc + (curr.duration_minutes || 0), 0);
 
   return (
     <div className="space-y-8">
       {/* ── Page header ────────────────────────────────────────────────────── */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-slate-200/80">
-        <div className="space-y-1">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-6 border-b border-slate-200/80">
+        <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
             Focus Session
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Study your planned topics, track focus, and build progress.
+            Real-time focus monitoring, structured topic breakdown, and active roadmap tracking.
           </p>
         </div>
-
-        {/* Study Dashboard Header */}
-        {selectedItem && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm min-w-[140px]">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Current Topic</p>
-              <p className="text-xs font-bold text-slate-900 truncate">{selectedItem.topic_name}</p>
+        {selectedPlan && (
+          <div className="flex items-center gap-3 bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-2xs">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Overall Plan Progress</span>
+              <span className="text-sm font-extrabold text-slate-800">
+                {doneItems} of {totalItems} completed ({progressPct}%)
+              </span>
             </div>
-            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm min-w-[140px]">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Session Timer</p>
-              <p className="text-xs font-mono font-bold text-indigo-600">{formatTime(elapsedTime)}</p>
-            </div>
-            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm min-w-[140px]">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Focus Score</p>
-              <p className="text-xs font-bold text-slate-900">{focusScore}%</p>
-            </div>
-            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm min-w-[140px]">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Overall Progress</p>
-              <p className="text-xs font-bold text-slate-900">{progressPct}%</p>
+            <div className="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full transition-all"
+                style={{ width: `${progressPct}%` }}
+              />
             </div>
           </div>
         )}
       </div>
+
+      {/* ── FOCUS TRACKING & ROADMAP SECTION (Requirement 7) ───────────────── */}
+      {selectedPlan && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 sm:p-6 space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-900">
+                Study & Focus Roadmap
+              </h2>
+              <p className="text-xs text-slate-500">Live breakdown of your active session, completed topics, and remaining tasks</p>
+            </div>
+            <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg">
+              Plan #{selectedPlan.id}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {/* 1. CURRENT STUDY */}
+            <div className="rounded-2xl border-2 border-indigo-500 bg-gradient-to-b from-indigo-50/70 to-white p-5 space-y-3.5 shadow-sm relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-black uppercase tracking-wider text-indigo-700">CURRENT TOPIC</span>
+                <span className="bg-indigo-600 text-white text-[10px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">
+                  {isSessionActive ? 'Active Now' : 'Selected'}
+                </span>
+              </div>
+              <h3 className="text-base font-extrabold text-slate-900 truncate">
+                {selectedItem?.topic_name || 'No Topic Selected'}
+              </h3>
+
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">CURRENT SUBTOPIC / MODE</span>
+                <p className="text-xs font-semibold text-slate-700 mt-0.5">
+                  {explanationMode === 'child' ? 'Child — Intuitive Concepts' : explanationMode === 'topper' ? 'Topper — Advanced Depth' : 'Average — Standard Curriculum'}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-indigo-100">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">SESSION</span>
+                  <p className="text-sm font-black text-slate-800 font-mono mt-0.5">
+                    {isSessionActive ? formatTime(elapsedTime) : `${durationMinutes} mins`}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">FOCUS</span>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className={`w-2 h-2 rounded-full ${focusScore >= 70 ? 'bg-emerald-500 animate-pulse' : focusScore >= 40 ? 'bg-amber-500' : 'bg-rose-500'}`} />
+                    <span className={`text-sm font-black ${focusScore >= 70 ? 'text-emerald-700' : focusScore >= 40 ? 'text-amber-700' : 'text-rose-700'}`}>
+                      {focusScore}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. COMPLETED */}
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/20 p-5 space-y-3 shadow-2xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between border-b border-emerald-100 pb-2 mb-3">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+                    <span className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-black">✓</span>
+                    Completed ({completedItems.length})
+                  </span>
+                  <span className="text-[10px] font-bold text-emerald-700">{progressPct}%</span>
+                </div>
+                <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                  {completedItems.length > 0 ? (
+                    completedItems.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between p-2 rounded-xl bg-white border border-emerald-100 text-xs shadow-2xs">
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="text-emerald-600 font-black">✓</span>
+                          <span className="font-semibold text-slate-700 truncate">{item.topic_name}</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-400 ml-2 whitespace-nowrap">{item.duration_minutes}m</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-slate-400 italic py-5 text-center">No completed topics yet. Finish a session to see them checked off here.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* 3. REMAINING */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 space-y-3 shadow-2xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-3">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                    <span className="w-4 h-4 rounded-full border border-slate-400 text-slate-600 flex items-center justify-center text-[10px] font-black">○</span>
+                    Remaining ({remainingItems.length})
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-500">{remainingDuration} mins left</span>
+                </div>
+                <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                  {remainingItems.length > 0 ? (
+                    remainingItems.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedPlanItemId(item.id);
+                          setDurationMinutes(item.duration_minutes || 45);
+                        }}
+                        className={`w-full flex items-center justify-between p-2 rounded-xl text-xs text-left transition-all ${
+                          item.id === selectedPlanItemId
+                            ? 'bg-indigo-50 border border-indigo-200 text-indigo-900 font-bold'
+                            : 'bg-white border border-slate-200 hover:border-indigo-200 text-slate-700 shadow-2xs'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="text-slate-400 font-bold">○</span>
+                          <span className="truncate">{item.topic_name}</span>
+                        </div>
+                        <span className="text-[10px] font-semibold text-slate-400 ml-2 whitespace-nowrap">{item.duration_minutes}m</span>
+                      </button>
+                    ))
+                  ) : (
+                    <p className="text-xs text-emerald-600 font-bold py-5 text-center">All topics in this plan are completed!</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
 
       {error && (

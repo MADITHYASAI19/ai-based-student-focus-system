@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { askDoubt } from '../api/client';
-import type { DoubtAnswer } from '../api/types';
+import type { DoubtAnswer, AnswerSection } from '../api/types';
 
 interface Message {
   id: string;
@@ -9,6 +9,8 @@ interface Message {
   subjectName: string;
   confidence?: 'high' | 'low';
   sourceChunks?: string[];
+  sections?: AnswerSection[];
+  sourceType?: 'pdf' | 'ai' | 'mixed' | 'none';
   timestamp: Date;
 }
 
@@ -35,7 +37,7 @@ export const DoubtChatPage: React.FC = () => {
     {
       id: 'welcome',
       sender: 'ai',
-      text: "Hello! I'm your AI Study Companion tutor. Ask me any question grounded in your course notes, and I'll retrieve relevant references with verified confidence.",
+      text: "Hello! I'm your AI Study Companion tutor. Ask me any question, and I'll provide answers grounded in your PDF notes when available, supplementing with general AI knowledge when needed.",
       subjectName: 'All Subjects',
       confidence: 'high',
       timestamp: new Date(),
@@ -44,6 +46,7 @@ export const DoubtChatPage: React.FC = () => {
   const [question, setQuestion] = useState('');
   const [selectedSubjectId, setSelectedSubjectId] = useState<number>(AVAILABLE_SUBJECTS[0].id);
   const [selectedTopicId, setSelectedTopicId] = useState<number | undefined>(undefined);
+  const [sourceMode, setSourceMode] = useState<'pdf+ai' | 'pdf_only' | 'general_ai'>('pdf+ai');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,6 +75,7 @@ export const DoubtChatPage: React.FC = () => {
         question: trimmed,
         subject_id: subjectId,
         topic_id: selectedTopicId,
+        source_mode: sourceMode,
       });
 
       const aiMessage: Message = {
@@ -81,6 +85,8 @@ export const DoubtChatPage: React.FC = () => {
         subjectName,
         confidence: response.confidence,
         sourceChunks: response.source_chunk_ids,
+        sections: response.sections,
+        sourceType: response.source_type,
         timestamp: new Date(),
       };
 
@@ -98,15 +104,67 @@ export const DoubtChatPage: React.FC = () => {
     }
   };
 
+  const renderSourceLabel = (sourceType?: 'pdf' | 'ai' | 'mixed' | 'none') => {
+    switch (sourceType) {
+      case 'pdf':
+        return '📄 FROM YOUR PDF';
+      case 'ai':
+        return '🤖 GENERAL AI KNOWLEDGE';
+      case 'mixed':
+        return '📄 PDF + 🤖 AI KNOWLEDGE';
+      case 'none':
+        return '⚠️ NO RELEVANT CONTENT';
+      default:
+        return '';
+    }
+  };
+
+  const renderSections = (sections?: AnswerSection[]) => {
+    if (!sections || sections.length === 0) return null;
+
+    return (
+      <div className="mt-3 space-y-3">
+        {sections.map((section, idx) => (
+          <div
+            key={idx}
+            className={`p-3 rounded-lg border ${
+              section.type === 'pdf'
+                ? 'bg-blue-50 border-blue-200'
+                : section.type === 'ai'
+                ? 'bg-purple-50 border-purple-200'
+                : 'bg-indigo-50 border-indigo-200'
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-bold uppercase">
+                {section.type === 'pdf' ? '📄 FROM YOUR PDF' : section.type === 'ai' ? '🤖 ADDITIONAL AI KNOWLEDGE' : '📄 PDF + 🤖 AI'}
+              </span>
+            </div>
+            <div className="text-sm whitespace-pre-wrap">{section.content}</div>
+            {section.sources && section.sources.length > 0 && (
+              <div className="mt-2 text-xs text-slate-500">
+                Sources: {section.sources.map((s, i) => (
+                  <span key={i} className="mr-2">
+                    {s.type === 'pdf' && s.chunks ? `Chunks: ${s.chunks.join(', ')}` : s.type}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Title */}
       <div>
         <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-          AI Doubt Tutor (RAG)
+          AI Doubt Tutor (Hybrid RAG + AI)
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Ask questions grounded in indexed study notes. Filtered with cosine similarity guardrails to prevent hallucination.
+          Ask questions grounded in indexed study notes with AI supplementation for missing information.
         </p>
       </div>
 
@@ -144,7 +202,7 @@ export const DoubtChatPage: React.FC = () => {
         <div className="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 rounded-t-2xl">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="text-xs font-semibold text-slate-700">RAG Knowledge Base Active</span>
+            <span className="text-xs font-semibold text-slate-700">Hybrid RAG + AI Knowledge Base Active</span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -175,6 +233,16 @@ export const DoubtChatPage: React.FC = () => {
                   {topic.name}
                 </option>
               ))}
+            </select>
+            <label className="text-xs font-semibold text-slate-500">Source Mode:</label>
+            <select
+              value={sourceMode}
+              onChange={(e) => setSourceMode(e.target.value as 'pdf+ai' | 'pdf_only' | 'general_ai')}
+              className="text-xs font-semibold bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="pdf+ai">PDF + AI</option>
+              <option value="pdf_only">PDF Only</option>
+              <option value="general_ai">General AI</option>
             </select>
           </div>
         </div>
@@ -209,8 +277,13 @@ export const DoubtChatPage: React.FC = () => {
                           : 'bg-amber-100 text-amber-800 border border-amber-200'
                       }`}
                     >
-                      {msg.confidence === 'high' ? '✓ High Confidence Grounded' : '⚠️ Low Confidence / Guardrail Triggered'}
+                      {msg.confidence === 'high' ? '✓ High Confidence' : '⚠️ Low Confidence'}
                     </span>
+                    {msg.sourceType && (
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-slate-100 text-slate-700 border border-slate-300">
+                        {renderSourceLabel(msg.sourceType)}
+                      </span>
+                    )}
                     <span className="text-[11px] text-slate-400 font-medium">Scope: {msg.subjectName}</span>
                   </div>
                 )}
@@ -218,8 +291,11 @@ export const DoubtChatPage: React.FC = () => {
                 {/* Body Text */}
                 <div className="whitespace-pre-wrap leading-relaxed">{msg.text}</div>
 
-                {/* Sources Footer */}
-                {msg.sourceChunks && msg.sourceChunks.length > 0 && (
+                {/* Source Sections */}
+                {renderSections(msg.sections)}
+
+                {/* Sources Footer (legacy) */}
+                {msg.sourceChunks && msg.sourceChunks.length > 0 && !msg.sections && (
                   <div className="mt-3 pt-2.5 border-t border-slate-200/60 flex items-center gap-2 text-xs text-slate-500">
                     <span className="font-semibold text-slate-600">Retrieved Chunks:</span>
                     <div className="flex flex-wrap gap-1">
@@ -248,7 +324,7 @@ export const DoubtChatPage: React.FC = () => {
               </div>
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-xs text-slate-500 flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-indigo-600 animate-ping"></div>
-                Searching ChromaDB vector store and reasoning answer...
+                {sourceMode === 'general_ai' ? 'Querying AI knowledge base...' : 'Searching ChromaDB vector store and reasoning answer...'}
               </div>
             </div>
           )}
@@ -265,7 +341,7 @@ export const DoubtChatPage: React.FC = () => {
           >
             <input
               type="text"
-              placeholder="Ask a question grounded in course notes..."
+              placeholder="Ask a question..."
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               disabled={loading}

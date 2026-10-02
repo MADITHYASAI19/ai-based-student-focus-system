@@ -8,6 +8,7 @@ const USER_STATE_KEY = 'user_learning_state';
 interface AuthContextType {
   token: string | null;
   isAuthenticated: boolean;
+  isLoading: boolean;  // true while we're reading localStorage on startup
   logout: () => void;
   setToken: (token: string) => void;
   userState: UserCurrentState | null;
@@ -17,17 +18,30 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [token, setTokenState] = useState<string | null>(null);
-  const [userState, setUserState] = useState<UserCurrentState | null>(null);
+  // Initialize token synchronously from localStorage so ProtectedRoute
+  // never sees a false-negative on the very first render.
+  const [token, setTokenState] = useState<string | null>(() => {
+    return localStorage.getItem(TOKEN_KEY);
+  });
+  const [userState, setUserState] = useState<UserCurrentState | null>(() => {
+    const cached = localStorage.getItem(USER_STATE_KEY);
+    if (cached) {
+      try { return JSON.parse(cached); } catch { /* ignore */ }
+    }
+    return null;
+  });
+  // isLoading stays true until the initial loadUserState() call settles,
+  // so ProtectedRoute can show a spinner instead of redirecting.
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    return !!localStorage.getItem(TOKEN_KEY);
+  });
 
   useEffect(() => {
-    // Load token from localStorage on mount
-    const storedToken = localStorage.getItem(TOKEN_KEY);
-    if (storedToken) {
-      setTokenState(storedToken);
-      // Load user state when token is present
-      loadUserState();
+    // If we had a token in localStorage, refresh the server-side state once.
+    if (token) {
+      loadUserState().finally(() => setIsLoading(false));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadUserState = async () => {
@@ -37,23 +51,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem(USER_STATE_KEY, JSON.stringify(state));
     } catch (error) {
       console.error('Failed to load user state:', error);
-      // Try to load from localStorage as fallback
-      const cachedState = localStorage.getItem(USER_STATE_KEY);
-      if (cachedState) {
-        try {
-          setUserState(JSON.parse(cachedState));
-        } catch (e) {
-          console.error('Failed to parse cached state:', e);
-        }
-      }
+      // Keep the cached state that was already loaded synchronously above
     }
   };
 
   const setToken = (newToken: string) => {
     localStorage.setItem(TOKEN_KEY, newToken);
     setTokenState(newToken);
-    // Load user state when token is set
-    loadUserState();
+    setIsLoading(true);
+    loadUserState().finally(() => setIsLoading(false));
   };
 
   const logout = () => {
@@ -61,6 +67,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem(USER_STATE_KEY);
     setTokenState(null);
     setUserState(null);
+    setIsLoading(false);
   };
 
   const refreshUserState = async () => {
@@ -70,6 +77,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const value = {
     token,
     isAuthenticated: !!token,
+    isLoading,
     logout,
     setToken,
     userState,

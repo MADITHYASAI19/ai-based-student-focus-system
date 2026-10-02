@@ -9,7 +9,6 @@ from typing import List
 from functools import lru_cache
 
 from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
 
 
 # Use a small, fast model for demo purposes
@@ -19,6 +18,7 @@ EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 @lru_cache(maxsize=1)
 def _get_model():
     """Lazy-load and cache the SentenceTransformer model."""
+    from sentence_transformers import SentenceTransformer
     return SentenceTransformer(EMBEDDING_MODEL)
 
 

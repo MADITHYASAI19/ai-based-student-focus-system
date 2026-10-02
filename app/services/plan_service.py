@@ -93,7 +93,7 @@ def update_item_status(db: Session, item_id: int, student_id: int, new_status: s
     db.refresh(item)
     
     # Update plan progress after item status change
-    update_plan_progress(db, item.study_plan_id)
+    update_plan_progress(db, item.plan_id)
     
     return item
 

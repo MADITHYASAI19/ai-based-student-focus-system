@@ -19,7 +19,12 @@ def resolve_doubt(
 ):
     """Resolve a student's doubt using RAG retrieval and LLM generation."""
     try:
-        return answer_doubt(request.question, request.subject_id, request.topic_id)
+        return answer_doubt(
+            request.question, 
+            request.subject_id, 
+            request.topic_id,
+            request.source_mode or "pdf+ai"
+        )
     except ValueError as e:
         # Validation or context retrieval failure
         raise HTTPException(

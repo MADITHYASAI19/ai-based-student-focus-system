@@ -26,6 +26,7 @@ class PlanStatus(str, Enum):
 
 class ItemStatus(str, Enum):
     PENDING = "pending"
+    IN_PROGRESS = "in_progress"
     DONE = "done"
     SKIPPED = "skipped"
 
@@ -35,6 +36,14 @@ class FocusEventType(str, Enum):
     AWAY = "away"
     SLEEPY = "sleepy"
     TAB_SWITCH = "tab_switch"
+
+
+class FaceTrackingEventType(str, Enum):
+    FACE_DETECTED = "face_detected"
+    FACE_NOT_DETECTED = "face_not_detected"
+    MULTIPLE_FACES = "multiple_faces"
+    FOCUS_LOST = "focus_lost"
+    FOCUS_RETURNED = "focus_returned"
 
 
 class User(Base):
@@ -179,6 +188,20 @@ class FocusEvent(Base):
     session: Mapped["StudySession"] = relationship("StudySession", back_populates="focus_events")
 
 
+class FaceTrackingEvent(Base):
+    __tablename__ = "face_tracking_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    quiz_attempt_id: Mapped[int] = mapped_column(Integer, ForeignKey("quiz_attempts.id"), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Duration of the event
+    event_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # Additional event details
+
+    # Relationships
+    quiz_attempt: Mapped["QuizAttempt"] = relationship("QuizAttempt", backref="face_tracking_events")
+
+
 class QuizAttempt(Base):
     __tablename__ = "quiz_attempts"
 
@@ -188,6 +211,22 @@ class QuizAttempt(Base):
     score: Mapped[float] = mapped_column(Float, nullable=False)
     completed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
+    # Rich quiz attempt fields (nullable for backward compat)
+    topic_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("topics.id"), nullable=True, index=True)
+    difficulty: Mapped[str | None] = mapped_column(String, nullable=True)
+    question_type: Mapped[str | None] = mapped_column(String, nullable=True)  # mcq/true_false/fill_blank/coding/mixed
+    question_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_points: Mapped[float | None] = mapped_column(Float, nullable=True)
+    percentage: Mapped[float | None] = mapped_column(Float, nullable=True)
+    correct_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    incorrect_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    unanswered_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    start_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    time_limit_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    question_results: Mapped[list | None] = mapped_column(JSON, nullable=True)  # per-question detail
+    status: Mapped[str | None] = mapped_column(String, nullable=True, default="not_started")  # not_started, in_progress, paused, submitted, completed, cancelled
+
     # Relationships
     student: Mapped["User"] = relationship("User", back_populates="quiz_attempts")
+    topic: Mapped["Topic | None"] = relationship("Topic")
 

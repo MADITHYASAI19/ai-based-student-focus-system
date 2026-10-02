@@ -1,101 +1,141 @@
 """
-Quiz generation module for AI Study Companion.
+Quiz generation module — multi-type, key-rotating, deduplicated.
 
-Imports QuizQuestion and QuizOut directly from app.schemas.quiz as the
-single source of truth for the quiz data contract.  This is intentional:
-app.schemas.quiz is a pure-Pydantic file with no FastAPI or SQLAlchemy
-imports, so importing it here introduces no circular dependency and keeps
-both sides in sync automatically.
+Supports: mcq, true_false, fill_blank, short_answer, coding.
+Uses the existing key_manager for Groq API key rotation.
 """
+from __future__ import annotations
 
+import hashlib
 import json
 import logging
-import os
-from typing import Any
-from functools import lru_cache
+from typing import Any, Sequence
 
-from dotenv import load_dotenv
-from openai import OpenAI
-
-# Single source of truth — do NOT redefine these locally.
-from app.schemas.quiz import QuizOut, QuizQuestion
-from ai_service.config import get_model_name
+from app.schemas.quiz import QuizQuestion, QuizOut, QUESTION_POINTS
+from ai_service.generation.provider import complete_text
 from ai_service.prompts.quiz_prompt import build_quiz_prompt
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Custom exception for quiz generation failures
+# Custom exceptions
 # ---------------------------------------------------------------------------
 
 class QuizGenerationError(Exception):
     """Raised when quiz generation fails after all retry attempts."""
     pass
 
-# ---------------------------------------------------------------------------
-# LLM client — Groq's OpenAI-compatible endpoint, key from environment
-# ---------------------------------------------------------------------------
 
-_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-
+# ---------------------------------------------------------------------------
+# Retry correction prompt
+# ---------------------------------------------------------------------------
 _RETRY_CORRECTION = (
-    "Your last response was invalid JSON. "
-    "Return ONLY the JSON array, no markdown fences, no commentary."
+    "Your last response was invalid JSON or did not match the required schema. "
+    "Return ONLY the JSON array, no markdown fences, no commentary. "
+    "Every object MUST have keys: id, question_text, type, options, correct_answer, explanation."
 )
 
 
-@lru_cache(maxsize=1)
-def _get_client() -> OpenAI:
-    """Instantiate and cache the OpenAI-compatible Groq client."""
-    load_dotenv()
-    api_key = os.getenv("AI_API_KEY")
-    if not api_key:
-        raise ValueError("AI_API_KEY environment variable is not set")
-    return OpenAI(api_key=api_key, base_url=_GROQ_BASE_URL, timeout=20.0)
+# ---------------------------------------------------------------------------
+# Validation helpers
+# ---------------------------------------------------------------------------
+_VALID_TYPES = {"mcq", "true_false", "fill_blank", "short_answer", "coding"}
 
 
-def _call_llm(client: OpenAI, messages: list[dict[str, str]]) -> str:
-    """Send messages to the LLM and return the raw response text."""
-    load_dotenv()
-    response = client.chat.completions.create(
-        model=get_model_name(),
-        messages=messages,  # type: ignore[arg-type]
-        temperature=0.3,
-        timeout=20.0,
-    )
-    return response.choices[0].message.content or ""
+def _validate_question(item: dict[str, Any], index: int) -> QuizQuestion:
+    """Validate a single question dict and return a QuizQuestion.
+
+    Raises ValueError with a descriptive message on any failure.
+    """
+    # Required fields
+    for key in ("question_text", "type", "correct_answer"):
+        if not item.get(key):
+            raise ValueError(f"Question[{index}] missing required field '{key}'")
+
+    qtype = item["type"]
+    if qtype not in _VALID_TYPES:
+        raise ValueError(f"Question[{index}] has unknown type '{qtype}'")
+
+    # Type-specific rules
+    if qtype == "mcq":
+        opts = item.get("options")
+        if not isinstance(opts, list) or len(opts) != 4:
+            raise ValueError(f"Question[{index}] MCQ must have exactly 4 options, got {opts!r}")
+        if len(set(opts)) != 4:
+            raise ValueError(f"Question[{index}] MCQ options must be distinct")
+        if item["correct_answer"] not in opts:
+            raise ValueError(
+                f"Question[{index}] correct_answer not in options: {item['correct_answer']!r}"
+            )
+
+    elif qtype == "true_false":
+        if item.get("options") != ["True", "False"]:
+            # Auto-fix: normalise
+            item["options"] = ["True", "False"]
+        if item["correct_answer"] not in ("True", "False"):
+            raise ValueError(
+                f"Question[{index}] true_false correct_answer must be 'True' or 'False'"
+            )
+
+    elif qtype == "fill_blank":
+        if "______" not in item["question_text"]:
+            raise ValueError(
+                f"Question[{index}] fill_blank question must contain '______'"
+            )
+
+    # Ensure id is a string
+    if not item.get("id"):
+        item["id"] = f"q{index + 1}"
+    item["id"] = str(item["id"])
+
+    # Ensure points
+    if not item.get("points"):
+        item["points"] = QUESTION_POINTS.get(qtype, 1.0)
+
+    return QuizQuestion.model_validate(item)
 
 
 def _parse_questions(raw: str) -> list[QuizQuestion]:
-    """Parse the LLM's raw JSON string into validated QuizQuestion objects.
+    """Parse and validate raw LLM JSON output into QuizQuestion list."""
+    # Strip markdown fences if model disobeys the prompt
+    stripped = raw.strip()
+    if stripped.startswith("```"):
+        lines = stripped.split("\n")
+        stripped = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
 
-    Raises:
-        json.JSONDecodeError: If ``raw`` is not valid JSON.
-        ValueError: If the parsed structure doesn't match QuizQuestion schema.
-    """
-    data: Any = json.loads(raw.strip())
+    data: Any = json.loads(stripped)
     if not isinstance(data, list):
-        raise ValueError(
-            f"Expected a JSON array from the LLM, got {type(data).__name__}"
-        )
+        raise ValueError(f"Expected JSON array, got {type(data).__name__}")
+
     questions: list[QuizQuestion] = []
     for i, item in enumerate(data):
-        try:
-            questions.append(QuizQuestion.model_validate(item))
-        except Exception as exc:
-            raise ValueError(
-                f"Question at index {i} failed schema validation: {exc}"
-            ) from exc
+        questions.append(_validate_question(item, i))
     return questions
 
 
 # ---------------------------------------------------------------------------
-# Public cache-key convention (shared with the quizzes router)
+# Question deduplication (hash-based)
 # ---------------------------------------------------------------------------
 
-def make_cache_key(topic_id: int, difficulty: str) -> str:
-    """Return the canonical Redis cache key for a quiz result."""
-    return f"quiz:{topic_id}:{difficulty}"
+def _question_hash(q: QuizQuestion) -> str:
+    """Return a short hash of the question text (for deduplication)."""
+    normalized = q.question_text.strip().lower()
+    return hashlib.sha256(normalized.encode()).hexdigest()[:16]
+
+
+# ---------------------------------------------------------------------------
+# Cache key convention
+# ---------------------------------------------------------------------------
+
+def make_cache_key(
+    topic_id: int,
+    difficulty: str,
+    question_types: Sequence[str] | None = None,
+    n_questions: int = 5,
+) -> str:
+    """Return the canonical cache key for a quiz result."""
+    types_str = ",".join(sorted(question_types or ["mcq"]))
+    return f"quiz:{topic_id}:{difficulty}:{types_str}:{n_questions}"
 
 
 # ---------------------------------------------------------------------------
@@ -106,52 +146,65 @@ def generate_quiz(
     topic: str,
     difficulty: str,
     n_questions: int = 5,
+    question_types: Sequence[str] | None = None,
+    pdf_context: str | None = None,
+    pdf_source_mode: str | None = None,
 ) -> list[QuizQuestion]:
     """Generate quiz questions via the LLM with one JSON-parse retry.
 
     Args:
         topic: Human-readable topic label (e.g. "Binary Trees").
-        difficulty: One of 'easy' | 'medium' | 'hard'.
-        n_questions: Desired number of questions (default 5).
+        difficulty: One of 'easy' | 'medium' | 'hard' | 'mixed'.
+        n_questions: Desired number of questions (1-30).
+        question_types: List of types to include. Defaults to ["mcq"].
+        pdf_context: Optional PDF content to ground questions in.
+        pdf_source_mode: "topic_knowledge", "pdf_only", or "topic_pdf".
 
     Returns:
         A validated list of QuizQuestion objects.
 
     Raises:
-        QuizGenerationError: If the LLM response cannot be parsed after two attempts,
-                             or if schema validation fails.
+        QuizGenerationError: If generation/parsing fails after 2 attempts.
     """
-    client = _get_client()
-    messages = build_quiz_prompt(topic=topic, difficulty=difficulty, n_questions=n_questions)
+    if question_types is None:
+        question_types = ["mcq"]
 
-    # --- Attempt 1 ---
-    logger.info("generate_quiz: attempt 1 — topic=%s difficulty=%s n=%s", topic, difficulty, n_questions)
-    raw = _call_llm(client, messages)
-    logger.debug("generate_quiz: LLM response (attempt 1): %s", raw[:300])
+    messages = build_quiz_prompt(
+        topic=topic,
+        difficulty=difficulty,
+        n_questions=n_questions,
+        question_types=question_types,
+        pdf_context=pdf_context,
+        pdf_source_mode=pdf_source_mode,
+    )
+
+    # Attempt 1 — complete_text uses rotating key manager internally
+    logger.info(
+        "generate_quiz: topic=%s difficulty=%s types=%s n=%s",
+        topic, difficulty, question_types, n_questions,
+    )
+    raw = complete_text(messages)
+    logger.debug("generate_quiz attempt 1 raw: %s", raw[:400])
 
     try:
         return _parse_questions(raw)
     except (json.JSONDecodeError, ValueError) as exc:
-        logger.warning(
-            "generate_quiz: attempt 1 parse failed (%s) — retrying with correction prompt",
-            exc,
-        )
+        logger.warning("generate_quiz attempt 1 failed (%s) — retrying", exc)
 
-    # --- Attempt 2: append correction message ---
+    # Attempt 2 with correction
     retry_messages = messages + [
         {"role": "assistant", "content": raw},
         {"role": "user", "content": _RETRY_CORRECTION},
     ]
-    logger.info("generate_quiz: attempt 2 — sending correction prompt")
-    raw2 = _call_llm(client, retry_messages)
-    logger.debug("generate_quiz: LLM response (attempt 2): %s", raw2[:300])
+    raw2 = complete_text(retry_messages)
+    logger.debug("generate_quiz attempt 2 raw: %s", raw2[:400])
 
     try:
         return _parse_questions(raw2)
     except (json.JSONDecodeError, ValueError) as exc:
         error_msg = (
             f"generate_quiz failed after 2 attempts for topic='{topic}' "
-            f"difficulty='{difficulty}': {exc}"
+            f"difficulty='{difficulty}' types={question_types}: {exc}"
         )
         logger.error(error_msg)
         raise QuizGenerationError(error_msg) from exc
@@ -162,16 +215,12 @@ def generate_quiz(
 # ---------------------------------------------------------------------------
 
 def serialise_quiz(quiz: QuizOut) -> str:
-    """Serialise a QuizOut to a JSON string for Redis storage."""
+    """Serialise a QuizOut to a JSON string for cache storage."""
     return quiz.model_dump_json()
 
 
 def deserialise_quiz(raw: str) -> QuizOut:
-    """Deserialise a JSON string from Redis back into a QuizOut instance.
-
-    Raises:
-        ValueError: If the raw string cannot be parsed or fails schema validation.
-    """
+    """Deserialise a JSON string back into a QuizOut instance."""
     try:
         data: dict[str, Any] = json.loads(raw)
         return QuizOut.model_validate(data)

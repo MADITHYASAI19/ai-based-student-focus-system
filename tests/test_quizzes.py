@@ -1,4 +1,4 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
@@ -37,7 +37,7 @@ def _create_topic(db_session) -> int:
     db_session.add(subject)
     db_session.commit()
     db_session.refresh(subject)
-    
+
     topic = Topic(
         subject_id=subject.id,
         name="Binary Search Trees",
@@ -61,17 +61,16 @@ def test_get_quiz_with_auth_returns_200_with_valid_shape(client, db_session):
     user_id, token = _register_and_login(client)
     topic_id = _create_topic(db_session)
 
-    # Mock the generate_quiz function to avoid real LLM calls
     mock_questions = [
         QuizQuestion(
-            id=1,
+            id="q1",
             question_text="Test question 1",
             type="mcq",
             options=["A", "B", "C", "D"],
             correct_answer="A",
         ),
         QuizQuestion(
-            id=2,
+            id="q2",
             question_text="Test question 2",
             type="mcq",
             options=["A", "B", "C", "D"],
@@ -89,14 +88,14 @@ def test_get_quiz_with_auth_returns_200_with_valid_shape(client, db_session):
 
         assert response.status_code == 200
         data = response.json()
-        
+
         # Validate QuizOut structure
         assert "topic_id" in data
         assert "difficulty" in data
         assert "questions" in data
         assert isinstance(data["questions"], list)
         assert len(data["questions"]) == 2
-        
+
         # Validate question structure
         question = data["questions"][0]
         assert "question_text" in question
@@ -105,13 +104,13 @@ def test_get_quiz_with_auth_returns_200_with_valid_shape(client, db_session):
 
 
 def test_get_quiz_calls_cache_logic(client, db_session):
-    """Test that cache logic is called correctly (cache_get and cache_set)."""
+    """Test that cache logic is called correctly."""
     user_id, token = _register_and_login(client)
     topic_id = _create_topic(db_session)
 
     mock_questions = [
         QuizQuestion(
-            id=1,
+            id="q1",
             question_text="Test question",
             type="mcq",
             options=["A", "B", "C", "D"],
@@ -122,7 +121,7 @@ def test_get_quiz_calls_cache_logic(client, db_session):
     with patch("app.services.quiz_service.generate_quiz") as mock_generate, \
          patch("app.services.quiz_service.cache_get") as mock_cache_get, \
          patch("app.services.quiz_service.cache_set") as mock_cache_set:
-        
+
         # Cache miss scenario
         mock_cache_get.return_value = None
         mock_generate.return_value = mock_questions
@@ -132,8 +131,8 @@ def test_get_quiz_calls_cache_logic(client, db_session):
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 200
-        assert mock_cache_get.call_count == 1  # Should check cache first
-        assert mock_cache_set.call_count == 1  # Should cache the result
+        assert mock_cache_get.call_count == 1   # Should check cache first
+        assert mock_cache_set.call_count == 1   # Should cache the result
 
 
 def test_get_quiz_invalid_topic_id_returns_404(client):
@@ -178,28 +177,28 @@ def test_submit_quiz_attempt_persists_and_scores_correctly(client, db_session):
 
     mock_questions = [
         QuizQuestion(
-            id=1,
+            id="q1",
             question_text="What is 2 + 2?",
             type="mcq",
             options=["2", "3", "4", "5"],
             correct_answer="4",
         ),
         QuizQuestion(
-            id=2,
+            id="q2",
             question_text="What is the capital of France?",
             type="mcq",
             options=["London", "Paris", "Berlin", "Rome"],
             correct_answer="Paris",
         ),
         QuizQuestion(
-            id=3,
+            id="q3",
             question_text="Is Python typed dynamically?",
             type="short_answer",
             options=None,
             correct_answer="Yes",
         ),
         QuizQuestion(
-            id=4,
+            id="q4",
             question_text="What is 10 / 2?",
             type="mcq",
             options=["2", "4", "5", "10"],

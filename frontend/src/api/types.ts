@@ -142,42 +142,132 @@ export interface Explanation {
 
 export type MonitoringStrictness = 'lenient' | 'balanced' | 'strict';
 
+export type QuestionType = 'mcq' | 'true_false' | 'fill_blank' | 'short_answer' | 'coding' | 'mixed';
+export type DifficultyLevel = 'easy' | 'medium' | 'hard' | 'mixed';
+
 export interface QuizQuestion {
-  id?: number | null;
+  id?: string | null;
   question_text: string;
-  type: 'mcq' | 'short_answer' | 'coding';
+  type: QuestionType;
   options?: string[] | null;
   correct_answer: string;
+  explanation?: string | null;
+  points?: number | null;
+  difficulty?: string | null;
 }
 
 export interface QuizOut {
+  quiz_cache_key: string;
   topic_id: number;
+  topic_name: string;
   difficulty: string;
+  question_types: string[];
   questions: QuizQuestion[];
+  total_points: number;
+  time_limit_minutes?: number | null;
+  face_tracking_enabled?: boolean;
+  fullscreen_required?: boolean;
 }
 
-export interface QuizAttemptCreate {
-  answers: Record<string, string>;
+export interface QuizConfig {
+  topic_id: number;
+  difficulty: DifficultyLevel;
+  question_types: QuestionType[];
+  n_questions: number;
+  time_limit_minutes?: number | null;
+  face_tracking_enabled?: boolean;
+  fullscreen_required?: boolean;
+  pdf_source_mode?: 'topic_knowledge' | 'pdf_only' | 'topic_pdf';
+}
+
+export interface QuestionAnswer {
+  question_id: string;
+  answer: string;
+}
+
+export interface QuizSubmission {
+  quiz_cache_key: string;
+  topic_id: number;
+  difficulty: string;
+  question_types: string[];
+  n_questions: number;
+  time_limit_minutes?: number | null;
+  start_time?: string | null;
+  answers: QuestionAnswer[];
+}
+
+export interface QuestionResult {
+  question_id: string;
+  question_text: string;
+  question_type: string;
+  student_answer: string;
+  correct_answer: string;
+  is_correct: boolean;
+  points_awarded: number;
+  points_possible: number;
+  explanation?: string | null;
 }
 
 export interface QuizAttemptOut {
   id: number;
   student_id: number;
   quiz_id: number;
+  topic_id?: number | null;
+  difficulty?: string | null;
+  question_type?: string | null;
   score: number;
-  completed_at: string | null;
+  total_points?: number | null;
+  correct_count?: number | null;
+  incorrect_count?: number | null;
+  unanswered_count?: number | null;
+  question_results?: QuestionResult[] | null;
+  completed_at?: string | null;
+  start_time?: string | null;
+  time_limit_minutes?: number | null;
 }
+
+// Legacy (kept for backward compat)
+export interface QuizAttemptCreate {
+  answers: Record<string, string>;
+}
+
+export interface TopicQuizStats {
+  topic_id: number;
+  topic_name: string;
+  attempt_count: number;
+  average_score: number;
+  best_score: number;
+  total_questions_attempted: number;
+  total_correct: number;
+}
+
+export interface AvailableTopic {
+  id: number;
+  name: string;
+  subject_name: string;
+  difficulty: string;
+}
+
 
 export interface DoubtRequest {
   question: string;
   subject_id: number;
   topic_id?: number;
+  source_mode?: 'pdf+ai' | 'pdf_only' | 'general_ai';
+}
+
+export interface AnswerSection {
+  type: 'pdf' | 'ai' | 'mixed';
+  content: string;
+  sources?: Array<{ type: string; chunks?: string[] }>;
 }
 
 export interface DoubtAnswer {
   answer_text: string;
   source_chunk_ids: string[];
   confidence: 'high' | 'low';
+  sections?: AnswerSection[];
+  source_type?: 'pdf' | 'ai' | 'mixed' | 'none';
 }
 
 export interface TopicBreakdownRequest {

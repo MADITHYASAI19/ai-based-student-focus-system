@@ -20,6 +20,10 @@ import type {
   TopicExplainRequest,
   TopicExplainResponse,
   PlanItemOut,
+  QuizConfig,
+  QuizSubmission,
+  AvailableTopic,
+  TopicQuizStats,
 } from './types';
 
 
@@ -211,7 +215,7 @@ export const explainTopic = async (data: TopicExplainRequest): Promise<TopicExpl
 };
 
 // Update plan item status
-export const updatePlanItemStatus = async (itemId: number, newStatus: 'pending' | 'done' | 'skipped'): Promise<PlanItemOut> => {
+export const updatePlanItemStatus = async (itemId: number, newStatus: 'pending' | 'in_progress' | 'done' | 'skipped'): Promise<PlanItemOut> => {
   const response = await apiClient.patch<PlanItemOut>(`/api/plans/items/${itemId}/status`, { status: newStatus });
   return response.data;
 };
@@ -231,5 +235,53 @@ export const finalizePlan = async (planId: number): Promise<StudyPlanOut> => {
 // Get current learning state
 export const getCurrentState = async () => {
   const response = await apiClient.get('/api/plans/state/current');
+  return response.data;
+};
+
+// Enhanced quiz endpoints
+export const getAvailableTopics = async (): Promise<AvailableTopic[]> => {
+  const response = await apiClient.get<AvailableTopic[]>('/api/quizzes/topics/available');
+  return response.data;
+};
+
+export const generateQuiz = async (config: QuizConfig): Promise<QuizOut> => {
+  const response = await apiClient.post<QuizOut>('/api/quizzes/generate', config);
+  return response.data;
+};
+
+export const submitQuiz = async (submission: QuizSubmission): Promise<QuizAttemptOut> => {
+  const response = await apiClient.post<QuizAttemptOut>('/api/quizzes/submit', submission);
+  return response.data;
+};
+
+export const getQuizHistory = async (limit: number = 20): Promise<QuizAttemptOut[]> => {
+  const response = await apiClient.get<QuizAttemptOut[]>('/api/quizzes/history', {
+    params: { limit },
+  });
+  return response.data;
+};
+
+export const getTopicQuizStats = async (topicId: number): Promise<TopicQuizStats> => {
+  const response = await apiClient.get<TopicQuizStats>(`/api/quizzes/topics/${topicId}/stats`);
+  return response.data;
+};
+
+// Face tracking endpoints
+export const recordFaceTrackingEvent = async (attemptId: number, eventType: string, durationSeconds?: number, metadata?: any) => {
+  const response = await apiClient.post(`/api/quizzes/attempts/${attemptId}/face-tracking-events`, {
+    event_type: eventType,
+    duration_seconds: durationSeconds,
+    event_metadata: metadata,
+  });
+  return response.data;
+};
+
+export const getFaceTrackingEvents = async (attemptId: number) => {
+  const response = await apiClient.get(`/api/quizzes/attempts/${attemptId}/face-tracking-events`);
+  return response.data;
+};
+
+export const getFaceTrackingSummary = async (attemptId: number) => {
+  const response = await apiClient.get(`/api/quizzes/attempts/${attemptId}/face-tracking-summary`);
   return response.data;
 };
