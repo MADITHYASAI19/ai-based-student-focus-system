@@ -2,14 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from '../hooks/useSession';
 import { useAuth } from '../contexts/AuthContext';
+import { useFaceDetection } from '../hooks/useFaceDetection';
+import { FocusTracker } from '../components/FocusTracker';
 import {
   explainTopic,
   getAllPlans,
   getSessionHistory,
   updatePlanItemStatus,
 } from '../api/client';
-import { useFocusMonitoring } from '../hooks/useFocusMonitoring';
-import type { MonitoringStrictness, StudyPlanOut, StudySessionOut } from '../api/types';
+
+import type { StudyPlanOut, StudySessionOut } from '../api/types';
 
 // ── Explanation renderer ─────────────────────────────────────────────────────
 const ExplanationContent: React.FC<{ text: string }> = ({ text }) => {
@@ -40,6 +42,7 @@ export const SessionPage: React.FC = () => {
   const { session, loading, error, elapsedTime, formatTime, startSession, endSession } = useSession();
   const { userState, refreshUserState } = useAuth();
   const navigate = useNavigate();
+  const faceDetection = useFaceDetection();
 
   // Plans & topics
   const [plans, setPlans] = useState<StudyPlanOut[]>([]);
@@ -56,10 +59,6 @@ export const SessionPage: React.FC = () => {
 
   // Session setup
   const [durationMinutes, setDurationMinutes] = useState(45);
-  const [showConsent, setShowConsent] = useState(false);
-  const [strictness, setStrictness] = useState<MonitoringStrictness>('balanced');
-  const [monitoringRequested, setMonitoringRequested] = useState(true);
-  const [focusPanelOpen, setFocusPanelOpen] = useState(true);
 
   // Session history
   const [history, setHistory] = useState<StudySessionOut[]>([]);
@@ -67,11 +66,10 @@ export const SessionPage: React.FC = () => {
   // Marking done / updating
   const [markingDone, setMarkingDone] = useState(false);
 
-  const {
-    videoRef, monitoring, detectorStatus, monitorError, events,
-    warningCount, focusScore, activeWarning, tabSwitchCount,
-    startMonitoring, stopMonitoring,
-  } = useFocusMonitoring();
+
+  const isSessionActive = session && !session.ended_at;
+  const isSessionEnded = session && session.ended_at;
+
 
   // ── Load plans on mount ────────────────────────────────────────────────────
   useEffect(() => {
@@ -125,20 +123,18 @@ export const SessionPage: React.FC = () => {
   }, [selectedItem?.id, explanationMode]);
 
   // ── Session actions ────────────────────────────────────────────────────────
-  const handleStart = () => setShowConsent(true);
-
-  const beginSession = async (withMonitoring: boolean) => {
-    setShowConsent(false);
+  const handleStart = async () => {
     try {
       if (document.documentElement.requestFullscreen) {
         await document.documentElement.requestFullscreen().catch(() => undefined);
       }
-      const started = await startSession({
+      await startSession({
         plan_item_id: selectedPlanItemId,
         explanation_mode: explanationMode,
         duration_minutes: durationMinutes,
       });
-      if (withMonitoring) await startMonitoring(started.id, strictness);
+      // Start face detection & focus tracking
+      faceDetection.startTracking();
     } catch (err) {
       console.error('Failed to start session:', err);
     }
@@ -147,8 +143,9 @@ export const SessionPage: React.FC = () => {
   const handleEnd = async () => {
     if (!session) return;
     try {
+      // Stop face detection & focus tracking
+      faceDetection.stopTracking();
       await endSession(session.id);
-      stopMonitoring();
       if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined);
       // Refresh history
       getSessionHistory().then(setHistory).catch(() => {});
@@ -179,8 +176,7 @@ export const SessionPage: React.FC = () => {
     }
   };
 
-  const isSessionActive = session && !session.ended_at;
-  const isSessionEnded = session && session.ended_at;
+
 
   // ── Progress stats (Requirement 7) ─────────────────────────────────────────
   const totalItems = planItems.length;
@@ -255,22 +251,11 @@ export const SessionPage: React.FC = () => {
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-indigo-100">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">SESSION</span>
-                  <p className="text-sm font-black text-slate-800 font-mono mt-0.5">
-                    {isSessionActive ? formatTime(elapsedTime) : `${durationMinutes} mins`}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">FOCUS</span>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className={`w-2 h-2 rounded-full ${focusScore >= 70 ? 'bg-emerald-500 animate-pulse' : focusScore >= 40 ? 'bg-amber-500' : 'bg-rose-500'}`} />
-                    <span className={`text-sm font-black ${focusScore >= 70 ? 'text-emerald-700' : focusScore >= 40 ? 'text-amber-700' : 'text-rose-700'}`}>
-                      {focusScore}%
-                    </span>
-                  </div>
-                </div>
+              <div className="pt-3 border-t border-indigo-100">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">SESSION DURATION</span>
+                <p className="text-sm font-black text-slate-800 font-mono mt-0.5">
+                  {isSessionActive ? formatTime(elapsedTime) : `${durationMinutes} mins`}
+                </p>
               </div>
             </div>
 
@@ -349,64 +334,6 @@ export const SessionPage: React.FC = () => {
       {error && (
         <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">
           {error}
-        </div>
-      )}
-
-      {/* ── Consent modal ──────────────────────────────────────────────────── */}
-      {showConsent && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl p-6 sm:p-8 space-y-6">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Before you begin</p>
-              <h2 className="text-2xl font-extrabold text-slate-900 mt-2">Choose your focus mode</h2>
-              <p className="text-sm text-slate-500 mt-2">
-                Monitoring runs on this device only. No camera video is uploaded.
-              </p>
-            </div>
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Strictness</label>
-              <div className="grid grid-cols-3 gap-2">
-                {(['lenient', 'balanced', 'strict'] as MonitoringStrictness[]).map((level) => (
-                  <button key={level} type="button" onClick={() => setStrictness(level)}
-                    className={`px-3 py-2.5 rounded-xl border text-xs font-bold capitalize ${strictness === level ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600'}`}>
-                    {level}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <label className="flex items-start gap-3 rounded-xl border border-slate-200 p-4 cursor-pointer">
-              <input type="checkbox" checked={monitoringRequested}
-                onChange={(e) => setMonitoringRequested(e.target.checked)} className="mt-1" />
-              <span>
-                <strong className="block text-sm text-slate-800">Allow camera for this session</strong>
-                <span className="block text-xs text-slate-500 mt-1">Face attention, drowsiness, and local phone detection enabled.</span>
-              </span>
-            </label>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button type="button" onClick={() => void beginSession(false)}
-                className="flex-1 px-4 py-3 rounded-xl bg-slate-100 text-slate-700 text-sm font-bold">
-                Start unmonitored
-              </button>
-              <button type="button" onClick={() => void beginSession(monitoringRequested)}
-                className="flex-1 px-4 py-3 rounded-xl bg-indigo-600 text-white text-sm font-bold">
-                Start session
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Active warning overlay ──────────────────────────────────────────── */}
-      {isSessionActive && activeWarning && (
-        <div className="fixed inset-x-4 top-5 z-[70] mx-auto max-w-2xl rounded-2xl border-4 border-amber-400 bg-amber-50 px-5 py-4 text-amber-950 shadow-2xl" role="alert">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl font-black text-amber-600">!</span>
-            <div>
-              <p className="text-sm font-extrabold uppercase tracking-wide">Focus warning</p>
-              <p className="mt-1 text-base font-bold">{activeWarning}</p>
-              <p className="mt-1 text-xs">Warning {warningCount} this session. Refocus when ready.</p>
-            </div>
-          </div>
         </div>
       )}
 
@@ -604,6 +531,18 @@ export const SessionPage: React.FC = () => {
 
         {/* ── RIGHT: Focus console ───────────────────────────────────────── */}
         <div className="lg:col-span-1 space-y-5">
+          {/* Focus Tracker (camera + face detection) */}
+          {(isSessionActive || faceDetection.cameraStatus !== 'idle') && (
+            <FocusTracker
+              videoRef={faceDetection.videoRef}
+              canvasRef={faceDetection.canvasRef}
+              cameraStatus={faceDetection.cameraStatus}
+              cameraError={faceDetection.cameraError}
+              faceDetected={faceDetection.faceDetected}
+              focusScore={faceDetection.focusScore}
+              trackingActive={faceDetection.trackingActive}
+            />
+          )}
           {/* Timer card */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 text-center">
             <div className="relative inline-flex flex-col items-center justify-center mb-6">
@@ -683,7 +622,7 @@ export const SessionPage: React.FC = () => {
                     <div className="p-2.5 bg-white/80 rounded-xl border border-emerald-100">
                       <p className="text-[10px] font-semibold uppercase text-slate-400">Focus</p>
                       <p className="text-xl font-black text-emerald-600">
-                        {session.focus_score != null ? `${Math.round(session.focus_score)}%` : '100%'}
+                        {faceDetection.focusScore != null ? `${faceDetection.focusScore}%` : (session.focus_score != null ? `${Math.round(session.focus_score)}%` : '100%')}
                       </p>
                     </div>
                     <div className="p-2.5 bg-white/80 rounded-xl border border-emerald-100">
@@ -712,45 +651,9 @@ export const SessionPage: React.FC = () => {
             )}
           </div>
 
-          {/* Focus panel (active session only) */}
-          {isSessionActive && (
-            <div className="rounded-2xl border border-slate-700 bg-slate-950 text-white overflow-hidden">
-              <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
-                <button type="button" onClick={() => setFocusPanelOpen((o) => !o)} className="flex items-center gap-2">
-                  <span className={`h-2.5 w-2.5 rounded-full ${focusScore >= 70 ? 'bg-emerald-400' : focusScore >= 40 ? 'bg-amber-400' : 'bg-rose-400'}`} />
-                  <span className="text-sm font-extrabold">Face Tracking</span>
-                </button>
-                <span className="text-2xl font-black">{focusScore}%</span>
-              </div>
-              {focusPanelOpen && (
-                <div className="space-y-3 p-3">
-                  <video ref={videoRef} muted playsInline
-                    className={`aspect-video w-full rounded-xl bg-black object-cover ${monitoring ? '' : 'hidden'}`} />
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="rounded-lg bg-white/10 px-3 py-2">
-                      <span className="block text-slate-400">Warnings</span>
-                      <strong>{warningCount}</strong>
-                    </div>
-                    <div className="rounded-lg bg-white/10 px-3 py-2">
-                      <span className="block text-slate-400">Tab switches</span>
-                      <strong>{tabSwitchCount}</strong>
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-slate-300">{detectorStatus}</p>
-                  {monitorError && (
-                    <p className="rounded-lg bg-rose-400/15 p-2 text-[11px] text-rose-200">{monitorError}</p>
-                  )}
-                  {events.length > 0 && (
-                    <div className="max-h-24 space-y-1 overflow-auto rounded-lg bg-amber-400/10 p-2 text-[11px] text-amber-100">
-                      {events.map((e, i) => <p key={`${e.type}-${i}`}>{e.message}</p>)}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
     </div>
   );
 };
+

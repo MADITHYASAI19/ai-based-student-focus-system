@@ -173,13 +173,6 @@ export const endSession = async (sessionId: number): Promise<StudySessionOut> =>
   return response.data;
 };
 
-export const recordFocusEvent = async (sessionId: number, eventType: string, strictness: string) => {
-  await apiClient.post(`/api/sessions/${sessionId}/events`, {
-    event_type: eventType,
-    strictness,
-  });
-};
-
 // Quiz endpoint
 export const getQuiz = async (topicId: number, difficulty: string = 'medium'): Promise<QuizOut> => {
   const response = await apiClient.get<QuizOut>(`/api/quizzes/${topicId}`, {

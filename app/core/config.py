@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     AI_API_BASE_URL: str = "https://api.groq.com/openai/v1"
     LLM_MODEL_NAME: str = "openai/gpt-oss-120b"
     FRONTEND_URL: str = "http://localhost:5173"
+    TRACKER_EMAIL: str | None = None
+    TRACKER_PASSWORD: str | None = None
+    TRACKER_API_URL: str = "http://localhost:8000"
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=True, extra="ignore")
 

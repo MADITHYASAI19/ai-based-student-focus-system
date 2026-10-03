@@ -262,6 +262,32 @@ def submit_quiz_attempt(
 
 
 # ---------------------------------------------------------------------------
+# Quiz attempt details
+# ---------------------------------------------------------------------------
+
+@router.get("/attempts/{attempt_id}", response_model=QuizAttemptOut, status_code=status.HTTP_200_OK)
+def get_quiz_attempt_endpoint(
+    attempt_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get details of a specific quiz attempt."""
+    from app.models.models import QuizAttempt
+    attempt = db.query(QuizAttempt).filter(
+        QuizAttempt.id == attempt_id,
+        QuizAttempt.student_id == current_user.id
+    ).first()
+    
+    if not attempt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quiz attempt not found"
+        )
+    
+    return attempt
+
+
+# ---------------------------------------------------------------------------
 # Face tracking endpoints
 # ---------------------------------------------------------------------------
 

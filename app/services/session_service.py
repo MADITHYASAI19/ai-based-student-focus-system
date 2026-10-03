@@ -59,38 +59,58 @@ def calculate_focus_score(session: StudySession) -> float:
     return max(0.0, base_score - total_penalty)
 
 
-def calculate_focus_score_from_metrics(session: StudySession, db: Session) -> Optional[float]:
-    """Calculate focus score from FocusMetric data if available."""
-    metrics = db.query(FocusMetric).filter(
-        FocusMetric.session_id == session.id
-    ).all()
-    
+def calculate_focus_score_from_metrics(session: StudySession, db: Session) -> Optional[tuple]:
+    """
+    Calculate focus score from FocusMetric time-based data.
+
+    Formula:
+        session_score = focused_tracked_duration / total_tracked_duration × 100
+
+    We iterate through all metrics for the session and calculate the weighted
+    average based on the 'is_focused' flag and the time delta between samples.
+    """
+    from sqlalchemy import asc as _asc
+    metrics = (
+        db.query(FocusMetric)
+        .filter(FocusMetric.session_id == session.id)
+        .order_by(_asc(FocusMetric.timestamp))
+        .all()
+    )
+
     if not metrics:
         return None
-    
-    # Calculate average focus score from metrics
-    total_focus_score = sum(m.focus_score for m in metrics)
-    avg_focus_score = total_focus_score / len(metrics)
-    
-    return avg_focus_score
+
+    total_tracked_ms = 0
+    total_focused_ms = 0
+
+    for i in range(1, len(metrics)):
+        prev = metrics[i-1]
+        curr = metrics[i]
+
+        # Interval duration in ms
+        delta = (curr.timestamp - prev.timestamp).total_seconds() * 1000
+
+        total_tracked_ms += delta
+        if curr.is_focused:
+            total_focused_ms += delta
+
+    if total_tracked_ms == 0:
+        return None
+
+    final_score = round((total_focused_ms / total_tracked_ms) * 100)
+    return float(final_score), float(final_score)
 
 
 def end_session(db: Session, session: StudySession) -> StudySession:
-    """End a study session and compute focus score."""
+    """End a study session and compute focus score from real tracking data."""
     session.ended_at = datetime.utcnow()
-    
-    # Try to get focus score from metrics first, fall back to event-based calculation
-    metrics_score = calculate_focus_score_from_metrics(session, db)
-    if metrics_score is not None:
-        session.focus_score = metrics_score
-        # Get average productivity score from metrics
-        metrics = db.query(FocusMetric).filter(
-            FocusMetric.session_id == session.id
-        ).all()
-        if metrics:
-            total_productivity = sum(m.productivity_score for m in metrics)
-            session.productivity_score = total_productivity / len(metrics)
+
+    # Primary: compute from FocusMetric time-based data
+    metrics_scores = calculate_focus_score_from_metrics(session, db)
+    if metrics_scores is not None:
+        session.focus_score, session.productivity_score = metrics_scores
     else:
+        # Fallback: event-based penalty scoring (no camera data recorded)
         score = calculate_focus_score(session)
         session.focus_score = score
         if session.productivity_score is None:
@@ -104,3 +124,4 @@ def end_session(db: Session, session: StudySession) -> StudySession:
     db.commit()
     db.refresh(session)
     return session
+

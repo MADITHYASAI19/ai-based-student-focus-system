@@ -222,6 +222,7 @@ class FocusMetric(Base):
     roll: Mapped[float | None] = mapped_column(Float, nullable=True)
     blink_rate: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     look_away_duration: Mapped[float | None] = mapped_column(Float, nullable=True)
+    phone_detected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     
     # Focus scores
     focus_score: Mapped[float] = mapped_column(Float, nullable=False)

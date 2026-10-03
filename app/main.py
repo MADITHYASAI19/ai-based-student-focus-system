@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.routers import auth, doubts, documents, plans, quizzes, sessions, focus_tracker
+from app.routers import auth, doubts, documents, plans, quizzes, sessions
 
 
 from app.core.config import get_settings
@@ -34,7 +34,7 @@ def create_app() -> FastAPI:
     app.include_router(quizzes.router, prefix="/api/quizzes", tags=["quizzes"])
     app.include_router(doubts.router, prefix="/api/doubts", tags=["doubts"])
     app.include_router(documents.router, prefix="/api/topics", tags=["documents"])
-    app.include_router(focus_tracker.router, prefix="/api/focus-tracker", tags=["focus-tracker"])
+
 
     # Validate critical settings
     settings = get_settings()

@@ -1,30 +1,58 @@
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Caches
-.pytest_cache/
-.coverage
-htmlcov/
-.cache/
-
-# Environments
-.venv/
-env/
+# Virtual Environment
 venv/
+env/
 ENV/
-.alembic-venv/
+.venv
 
-# Local database and vector storage
-*.db
-*.sqlite3
-chroma_data/
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
 # Environment variables
 .env
+.env.local
 
-# OS / Editor files
-.vscode/
-.idea/
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# Focus Tracker JWT Cache
+.focus_tracker_jwt.json
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# OS
 .DS_Store
+Thumbs.db

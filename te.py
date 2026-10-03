@@ -103,7 +103,7 @@ class AudioMonitor:
         rms = np.sqrt(np.mean(indata**2))
         self.current_rms = float(rms)
         self.audio_history.append(rms)
-
+        
         if rms < 0.008:
             self.sound_class = "🔇 Silent"
             self.is_speaking = False
@@ -233,7 +233,7 @@ class ObjectDetector:
         self.phone_motion_history = deque(maxlen=10)
         self.previous_phone_positions = []
         self.phone_detection_confidence = 0.0
-
+        
         if HAS_YOLO:
             try:
                 print("[ObjectDetector] Loading YOLOv8...")
@@ -266,7 +266,7 @@ class ObjectDetector:
             try:
                 results = self.yolo_model(frame, verbose=False, conf=0.25)[0]
                 phone_positions = []
-
+                
                 for box in results.boxes:
                     cls_id = int(box.cls[0])
                     name = self.yolo_model.names[cls_id].lower()
@@ -274,7 +274,7 @@ class ObjectDetector:
                     conf = float(box.conf[0])
                     cx = (x1 + x2) // 2
                     cy = (y1 + y2) // 2
-
+                    
                     detections["yolo_boxes"].append((name, conf, (x1, y1, x2, y2)))
 
                     if "phone" in name or "cell" in name:
@@ -282,7 +282,7 @@ class ObjectDetector:
                         detections["phone_detected"] = True
                         detections["phone_bbox"] = (x1, y1, x2, y2)
                         self.phone_detection_confidence = conf
-
+                        
                         if y2 > h * 0.55:
                             detections["phone_label"] = f"📱 Phone in Hand ({conf:.0%})"
                         elif y1 < h * 0.3:
@@ -562,7 +562,7 @@ class VisionPipeline:
 
             results["emotion"] = self.classify_emotion(landmarks, avg_ear, mar, w, h)
             self.emotion_history.append(results["emotion"])
-
+            
             blink_rate = results["blink_rate"]
             if blink_rate > 28 or (abs(yaw) > 25 and results["emotion"] in ["😫 Tired", "😠 Angry"]):
                 results["stress_level"] = "High"
@@ -570,7 +570,7 @@ class VisionPipeline:
                 results["stress_level"] = "Moderate"
             else:
                 results["stress_level"] = "Low"
-
+            
             self.stress_level_history.append(results["stress_level"])
 
         if res_pose.pose_landmarks:
@@ -888,17 +888,17 @@ def main():
     # Try to set resolution
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-
+    
     # Test capture
     ret, test_frame = cap.read()
     if not ret:
         print("❌ ERROR: Webcam opened but cannot capture frames!")
         cap.release()
         return
-
+    
     print("✅ Webcam working!")
     cap.release()
-
+    
     # Reopen for actual use
     cap = cv2.VideoCapture(0)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)

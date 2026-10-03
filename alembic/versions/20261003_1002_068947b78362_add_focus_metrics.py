@@ -34,6 +34,7 @@ def upgrade() -> None:
         sa.Column('roll', sa.Float(), nullable=True),
         sa.Column('blink_rate', sa.Integer(), nullable=False, server_default='0'),
         sa.Column('look_away_duration', sa.Float(), nullable=True),
+        sa.Column('phone_detected', sa.Boolean(), nullable=False, server_default='false'),
         sa.Column('focus_score', sa.Float(), nullable=False),
         sa.Column('productivity_score', sa.Float(), nullable=False),
         sa.Column('is_focused', sa.Boolean(), nullable=False),

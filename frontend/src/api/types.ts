@@ -165,8 +165,8 @@ export interface QuizOut {
   questions: QuizQuestion[];
   total_points: number;
   time_limit_minutes?: number | null;
-  face_tracking_enabled?: boolean;
   fullscreen_required?: boolean;
+  pdf_source_mode?: 'topic_knowledge' | 'pdf_only' | 'topic_pdf';
 }
 
 export interface QuizConfig {
@@ -175,7 +175,6 @@ export interface QuizConfig {
   question_types: QuestionType[];
   n_questions: number;
   time_limit_minutes?: number | null;
-  face_tracking_enabled?: boolean;
   fullscreen_required?: boolean;
   pdf_source_mode?: 'topic_knowledge' | 'pdf_only' | 'topic_pdf';
 }

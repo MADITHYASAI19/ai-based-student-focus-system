@@ -28,7 +28,6 @@ export const QuizPage: React.FC = () => {
   const [questionTypes, setQuestionTypes] = useState<QuestionType[]>(['mcq']);
   const [questionCount, setQuestionCount] = useState(5);
   const [timeLimit, setTimeLimit] = useState<number | null>(null);
-  const [faceTrackingEnabled, setFaceTrackingEnabled] = useState(false);
   const [fullscreenRequired, setFullscreenRequired] = useState(false);
   const [pdfSourceMode, setPdfSourceMode] = useState<'topic_knowledge' | 'pdf_only' | 'topic_pdf'>('topic_knowledge');
   
@@ -41,8 +40,6 @@ export const QuizPage: React.FC = () => {
   const [showTestRules, setShowTestRules] = useState(false);
   const [quizStatus, setQuizStatus] = useState<'not_started' | 'in_progress' | 'paused' | 'submitted'>('not_started');
   const [fullscreenActive, setFullscreenActive] = useState(false);
-  const [faceTrackingActive, setFaceTrackingActive] = useState(false);
-  const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
   
   // Timer state
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
@@ -123,7 +120,6 @@ export const QuizPage: React.FC = () => {
       question_types: questionTypes,
       n_questions: questionCount,
       time_limit_minutes: timeLimit,
-      face_tracking_enabled: faceTrackingEnabled,
       fullscreen_required: fullscreenRequired,
       pdf_source_mode: pdfSourceMode,
     };
@@ -156,22 +152,6 @@ export const QuizPage: React.FC = () => {
         setError('Fullscreen is required for this quiz but could not be enabled.');
         setQuizStatus('not_started');
         return;
-      }
-    }
-
-    // Start face tracking if enabled
-    if (quiz.face_tracking_enabled) {
-      try {
-        // Request camera permission
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        setFaceTrackingActive(true);
-        // Store stream reference for cleanup
-        (window as any).cameraStream = stream;
-      } catch (err) {
-        console.error('Camera permission denied:', err);
-        setCameraPermissionDenied(true);
-        setFaceTrackingActive(false);
-        // Continue without face tracking if permission denied
       }
     }
 
@@ -306,8 +286,6 @@ export const QuizPage: React.FC = () => {
     setTimerActive(false);
     setQuizStatus('not_started');
     setFullscreenActive(false);
-    setFaceTrackingActive(false);
-    setCameraPermissionDenied(false);
     handleExitFullscreen();
   };
 
@@ -470,12 +448,7 @@ export const QuizPage: React.FC = () => {
                 Proctoring Settings
               </h3>
               <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <span className={quiz.face_tracking_enabled ? 'text-emerald-600' : 'text-slate-500'}>
-                    {quiz.face_tracking_enabled ? '✓' : '○'}
-                  </span>
-                  <span className="text-slate-700">Face Tracking: {quiz.face_tracking_enabled ? 'Enabled' : 'Disabled'}</span>
-                </div>
+
                 <div className="flex items-center gap-2">
                   <span className={quiz.fullscreen_required ? 'text-emerald-600' : 'text-slate-500'}>
                     {quiz.fullscreen_required ? '✓' : '○'}
@@ -500,19 +473,7 @@ export const QuizPage: React.FC = () => {
                   Leaving the full-screen test environment will pause/stop this test according to the test policy.
                 </p>
               </div>
-            )}
-
-            {quiz.face_tracking_enabled && (
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                <p className="text-sm text-blue-800 font-semibold">
-                  📷 Camera Access
-                </p>
-                <p className="text-sm text-blue-700 mt-1">
-                  Camera access is used only for the selected focus/proctoring features during this test.
-                </p>
-              </div>
-            )}
-          </div>
+            )}          </div>
 
           <div className="flex gap-3 pt-4 border-t border-slate-100">
             <button
@@ -762,41 +723,7 @@ export const QuizPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Face Tracking Configuration */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-              6. Face Tracking (Optional)
-            </label>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setFaceTrackingEnabled(false)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  !faceTrackingEnabled
-                    ? 'bg-slate-700 text-white shadow-md'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                Off
-              </button>
-              <button
-                type="button"
-                onClick={() => setFaceTrackingEnabled(true)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  faceTrackingEnabled
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                On
-              </button>
-            </div>
-            {faceTrackingEnabled && (
-              <p className="text-xs text-slate-500 mt-2">
-                Camera access will be requested to monitor focus during the quiz.
-              </p>
-            )}
-          </div>
+
 
           {/* Fullscreen Configuration */}
           <div>
@@ -943,22 +870,7 @@ export const QuizPage: React.FC = () => {
               </h2>
             </div>
             <div className="flex items-center gap-3">
-              {/* Face Tracking Status */}
-              {quiz.face_tracking_enabled && (
-                <div className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 ${
-                  faceTrackingActive
-                    ? 'bg-emerald-100 text-emerald-700'
-                    : cameraPermissionDenied
-                    ? 'bg-amber-100 text-amber-700'
-                    : 'bg-slate-100 text-slate-500'
-                }`}>
-                  <span className={`w-2 h-2 rounded-full ${
-                    faceTrackingActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
-                  }`}></span>
-                  {faceTrackingActive ? 'Face Tracking Active' : cameraPermissionDenied ? 'Camera Unavailable' : 'Face Tracking'}
-                </div>
-              )}
-              {/* Fullscreen Status */}
+              {/* Face Tracking Status */}              {/* Fullscreen Status */}
               {quiz.fullscreen_required && (
                 <div className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 ${
                   fullscreenActive ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
