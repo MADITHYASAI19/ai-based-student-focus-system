@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   getAvailableTopics,
@@ -6,7 +6,11 @@ import {
   submitQuiz,
   getQuizHistory,
   getTopicQuizStats,
+  recordFaceTrackingEvent,
 } from '../api/client';
+import { useFaceDetection } from '../hooks/useFaceDetection';
+import { usePhoneDetection } from '../hooks/usePhoneDetection';
+import { useProctoring } from '../hooks/useProctoring';
 import type {
   QuizOut,
   QuizAttemptOut,
@@ -30,6 +34,7 @@ export const QuizPage: React.FC = () => {
   const [timeLimit, setTimeLimit] = useState<number | null>(null);
   const [fullscreenRequired, setFullscreenRequired] = useState(false);
   const [pdfSourceMode, setPdfSourceMode] = useState<'topic_knowledge' | 'pdf_only' | 'topic_pdf'>('topic_knowledge');
+  const [faceTrackingEnabled, setFaceTrackingEnabled] = useState(true);
   
   // Quiz state
   const [quiz, setQuiz] = useState<QuizOut | null>(null);
@@ -40,6 +45,7 @@ export const QuizPage: React.FC = () => {
   const [showTestRules, setShowTestRules] = useState(false);
   const [quizStatus, setQuizStatus] = useState<'not_started' | 'in_progress' | 'paused' | 'submitted'>('not_started');
   const [fullscreenActive, setFullscreenActive] = useState(false);
+  const [showProctoringHUD, setShowProctoringHUD] = useState(true);
   
   // Timer state
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
@@ -55,6 +61,43 @@ export const QuizPage: React.FC = () => {
   const [history, setHistory] = useState<QuizAttemptOut[]>([]);
   const [topicStats, setTopicStats] = useState<TopicQuizStats | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+
+  // ── Proctoring: reuse existing hooks (same as SessionPage) ─────────────────
+  const faceDetection = useFaceDetection();
+  const phoneDetection = usePhoneDetection(faceDetection.videoRef);
+
+  // Buffer for face tracking events logged during quiz (posted after submit)
+  const faceEventBufferRef = useRef<Array<{ eventType: string; ts: number }>>([]);
+
+  const isQuizInProgress = quizStatus === 'in_progress' && faceTrackingEnabled;
+
+  const proctoring = useProctoring({
+    sessionId: undefined, // no session link for quiz proctoring; we buffer events ourselves
+    isSessionActive: isQuizInProgress,
+    cameraStatus: faceDetection.cameraStatus,
+    cameraError: faceDetection.cameraError,
+    faceDetected: faceDetection.faceDetected,
+    faceDetections: faceDetection.detections,
+    phoneDetected: phoneDetection.phoneDetected,
+    phoneConfidence: phoneDetection.phoneConfidence,
+    phoneBox: phoneDetection.phoneBox,
+  });
+
+  // Buffer every new violation / cleared event so we can POST them after submit
+  const lastBufferedEventRef = useRef<string | null>(null);
+  const bufferProctoringEvent = useCallback((eventType: string) => {
+    if (eventType && eventType !== lastBufferedEventRef.current) {
+      lastBufferedEventRef.current = eventType;
+      faceEventBufferRef.current.push({ eventType, ts: Date.now() });
+    }
+  }, []);
+
+  // Detect new proctoring events and buffer them
+  useEffect(() => {
+    if (!isQuizInProgress) return;
+    const latest = proctoring.lastLoggedEvent;
+    if (latest) bufferProctoringEvent(latest);
+  }, [proctoring.lastLoggedEvent, isQuizInProgress, bufferProctoringEvent]);
   
   // Load available topics on mount
   useEffect(() => {
@@ -112,6 +155,8 @@ export const QuizPage: React.FC = () => {
     setAnswers({});
     setCurrentQuestionIndex(0);
     setShowResults(false);
+    faceEventBufferRef.current = [];
+    lastBufferedEventRef.current = null;
     setShowTestRules(true); // Show test rules before starting quiz
 
     const config: QuizConfig = {
@@ -141,6 +186,18 @@ export const QuizPage: React.FC = () => {
 
     setShowTestRules(false);
     setQuizStatus('in_progress');
+    setShowProctoringHUD(true);
+
+    // Start face tracking camera if enabled
+    if (faceTrackingEnabled) {
+      try {
+        await faceDetection.startTracking();
+        await phoneDetection.startPhoneDetection();
+      } catch (err) {
+        console.warn('[Quiz] Face tracking failed to start:', err);
+        // Non-blocking — quiz continues even if camera fails
+      }
+    }
 
     // Enter fullscreen if required
     if (quiz.fullscreen_required) {
@@ -151,6 +208,9 @@ export const QuizPage: React.FC = () => {
         console.error('Fullscreen request failed:', err);
         setError('Fullscreen is required for this quiz but could not be enabled.');
         setQuizStatus('not_started');
+        // Stop camera if we're aborting
+        faceDetection.stopTracking();
+        phoneDetection.stopPhoneDetection();
         return;
       }
     }
@@ -204,15 +264,13 @@ export const QuizPage: React.FC = () => {
     };
   }, [quizStatus]);
 
-  // Cleanup camera stream on unmount
+  // Cleanup face tracking on unmount or quiz end
   useEffect(() => {
     return () => {
-      const stream = (window as any).cameraStream;
-      if (stream) {
-        stream.getTracks().forEach((track: MediaStreamTrack) => track.stop());
-        delete (window as any).cameraStream;
-      }
+      faceDetection.stopTracking();
+      phoneDetection.stopPhoneDetection();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   
   const handleSelectAnswer = (questionId: string, answer: string) => {
@@ -245,6 +303,11 @@ export const QuizPage: React.FC = () => {
     
     setSubmitting(true);
     setError(null);
+
+    // Stop proctoring camera before submitting
+    faceDetection.stopTracking();
+    phoneDetection.stopPhoneDetection();
+    setQuizStatus('submitted');
     
     const submission: QuizSubmission = {
       quiz_cache_key: quiz.quiz_cache_key,
@@ -262,6 +325,18 @@ export const QuizPage: React.FC = () => {
       setQuizResult(result);
       setShowResults(true);
       setTimerActive(false);
+
+      // Batch-post all buffered face tracking events to the attempt record
+      if (faceTrackingEnabled && faceEventBufferRef.current.length > 0 && result.id) {
+        const buffer = [...faceEventBufferRef.current];
+        faceEventBufferRef.current = [];
+        // Fire-and-forget; non-blocking
+        Promise.all(
+          buffer.map((ev) =>
+            recordFaceTrackingEvent(result.id, ev.eventType).catch(() => {})
+          )
+        ).catch(() => {});
+      }
       
       // Refresh history and stats
       await loadQuizHistory();
@@ -271,12 +346,20 @@ export const QuizPage: React.FC = () => {
     } catch (err: any) {
       console.error('Failed to submit quiz:', err);
       setError(err.response?.data?.detail || 'Failed to submit quiz. Please try again.');
+      // Restore in_progress state if submission failed
+      setQuizStatus('in_progress');
     } finally {
       setSubmitting(false);
     }
   };
   
   const handleRetakeQuiz = () => {
+    // Stop any active camera
+    faceDetection.stopTracking();
+    phoneDetection.stopPhoneDetection();
+    faceEventBufferRef.current = [];
+    lastBufferedEventRef.current = null;
+
     setQuiz(null);
     setAnswers({});
     setCurrentQuestionIndex(0);
@@ -448,7 +531,12 @@ export const QuizPage: React.FC = () => {
                 Proctoring Settings
               </h3>
               <div className="space-y-2 text-sm">
-
+                <div className="flex items-center gap-2">
+                  <span className={faceTrackingEnabled ? 'text-indigo-600' : 'text-slate-400'}>
+                    {faceTrackingEnabled ? '🎥' : '○'}
+                  </span>
+                  <span className="text-slate-700">Face Tracking: {faceTrackingEnabled ? 'Active (webcam monitoring)' : 'Disabled'}</span>
+                </div>
                 <div className="flex items-center gap-2">
                   <span className={quiz.fullscreen_required ? 'text-emerald-600' : 'text-slate-500'}>
                     {quiz.fullscreen_required ? '✓' : '○'}
@@ -725,6 +813,42 @@ export const QuizPage: React.FC = () => {
 
 
 
+          {/* Face Tracking Configuration */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+              6. Face Tracking (Proctoring)
+            </label>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setFaceTrackingEnabled(false)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  !faceTrackingEnabled
+                    ? 'bg-slate-700 text-white shadow-md'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Disabled
+              </button>
+              <button
+                type="button"
+                onClick={() => setFaceTrackingEnabled(true)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  faceTrackingEnabled
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                🎥 Enabled
+              </button>
+            </div>
+            {faceTrackingEnabled && (
+              <p className="text-xs text-slate-500 mt-2">
+                Webcam will monitor for distraction events: no face, multiple faces, phone detected, looking away.
+              </p>
+            )}
+          </div>
+
           {/* Fullscreen Configuration */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
@@ -870,7 +994,31 @@ export const QuizPage: React.FC = () => {
               </h2>
             </div>
             <div className="flex items-center gap-3">
-              {/* Face Tracking Status */}              {/* Fullscreen Status */}
+              {/* Face Tracking HUD badge */}
+              {faceTrackingEnabled && (
+                <button
+                  onClick={() => setShowProctoringHUD((v) => !v)}
+                  title="Toggle proctoring panel"
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                    proctoring.activeWarning
+                      ? 'bg-rose-100 text-rose-700 animate-pulse'
+                      : proctoring.proctoringActive
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-slate-100 text-slate-500'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${
+                    proctoring.activeWarning ? 'bg-rose-500' : proctoring.proctoringActive ? 'bg-emerald-500 animate-ping' : 'bg-slate-400'
+                  }`} />
+                  {proctoring.activeWarning ? '⚠ Violation' : '🎥 Proctored'}
+                  {proctoring.totalWarnings > 0 && (
+                    <span className="ml-1 px-1.5 py-0.5 bg-amber-500 text-white rounded-full text-[9px] font-black">
+                      {proctoring.totalWarnings}
+                    </span>
+                  )}
+                </button>
+              )}
+              {/* Fullscreen Status */}
               {quiz.fullscreen_required && (
                 <div className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 ${
                   fullscreenActive ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
@@ -893,6 +1041,77 @@ export const QuizPage: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Compact Proctoring HUD (collapsible, shown below header) */}
+          {faceTrackingEnabled && showProctoringHUD && (
+            <div className="border-b border-slate-100 bg-slate-950/95 px-4 py-3">
+              {/* Hidden video element for camera feed */}
+              <video
+                ref={faceDetection.videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="hidden"
+              />
+              <canvas ref={faceDetection.canvasRef} className="hidden" />
+
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">🔴 Proctoring Live</span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Face */}
+                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold ${
+                    proctoring.faceStatus === 'detected' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      proctoring.faceStatus === 'detected' ? 'bg-emerald-400' : 'bg-rose-400'
+                    }`} />
+                    {proctoring.faceStatus === 'detected' ? 'Face ✓' : 'No Face'}
+                  </span>
+                  {/* People */}
+                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold ${
+                    proctoring.peopleCount === 1 ? 'bg-slate-700 text-slate-300' : proctoring.peopleCount > 1 ? 'bg-rose-500/20 text-rose-400' : 'bg-slate-700 text-slate-500'
+                  }`}>
+                    👥 {proctoring.peopleCount}
+                  </span>
+                  {/* Phone */}
+                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold ${
+                    proctoring.phoneStatus === 'detected' ? 'bg-amber-500/20 text-amber-400 animate-pulse' : 'bg-slate-700 text-slate-300'
+                  }`}>
+                    📱 {proctoring.phoneStatus === 'detected' ? 'Phone!' : 'Clear'}
+                  </span>
+                  {/* Gaze */}
+                  {proctoring.faceStatus === 'detected' && (
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold ${
+                      proctoring.isLookingAway ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700 text-slate-300'
+                    }`}>
+                      👀 {proctoring.isLookingAway ? 'Away' : 'Focused'}
+                    </span>
+                  )}
+                  {/* Warnings */}
+                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold ${
+                    proctoring.totalWarnings > 0 ? 'bg-rose-500/20 text-rose-400' : 'bg-slate-700 text-slate-400'
+                  }`}>
+                    ⚠ {proctoring.totalWarnings} violations
+                  </span>
+                </div>
+                <button
+                  onClick={() => setShowProctoringHUD(false)}
+                  className="text-slate-500 hover:text-slate-300 text-xs transition-colors"
+                  title="Minimize proctoring panel"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Active violation banner */}
+              {proctoring.activeWarning && (
+                <div className="mt-2 px-3 py-2 rounded-lg bg-rose-600/30 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center gap-2">
+                  <span className="animate-pulse">⚠</span>
+                  {proctoring.activeWarning}
+                </div>
+              )}
+            </div>
+          )}
           
           {/* Question Navigation */}
           <div className="px-6 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">

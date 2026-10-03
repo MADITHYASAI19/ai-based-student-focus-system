@@ -41,3 +41,30 @@ def test_record_focus_event_rejects_raw_or_unknown_event(client):
     )
 
     assert response.status_code == 400
+
+
+def test_record_proctoring_violation_events(client):
+    token = _register_and_login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    session = client.post("/api/sessions/start", json={}, headers=headers).json()
+
+    proctoring_events = [
+        "NO_FACE",
+        "FACE_DETECTED",
+        "MULTIPLE_FACES",
+        "LOOKING_AWAY",
+        "PHONE_DETECTED",
+        "PHONE_CLEARED",
+        "CAMERA_ERROR",
+        "CAMERA_STOPPED",
+    ]
+
+    for event_name in proctoring_events:
+        res = client.post(
+            f"/api/sessions/{session['id']}/events",
+            json={"event_type": event_name, "strictness": "balanced"},
+            headers=headers,
+        )
+        assert res.status_code == 201
+        assert res.json()["event_type"] == event_name
+

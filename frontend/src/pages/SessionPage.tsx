@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useSession } from '../hooks/useSession';
 import { useAuth } from '../contexts/AuthContext';
 import { useFaceDetection } from '../hooks/useFaceDetection';
+import { usePhoneDetection } from '../hooks/usePhoneDetection';
+import { useProctoring } from '../hooks/useProctoring';
 import { FocusTracker } from '../components/FocusTracker';
 import {
   explainTopic,
@@ -43,6 +45,21 @@ export const SessionPage: React.FC = () => {
   const { userState, refreshUserState } = useAuth();
   const navigate = useNavigate();
   const faceDetection = useFaceDetection();
+  const phoneDetection = usePhoneDetection(faceDetection.videoRef);
+  const isSessionActive = session && !session.ended_at;
+  const isSessionEnded = session && session.ended_at;
+
+  const proctoring = useProctoring({
+    sessionId: session?.id,
+    isSessionActive: Boolean(isSessionActive),
+    cameraStatus: faceDetection.cameraStatus,
+    cameraError: faceDetection.cameraError,
+    faceDetected: faceDetection.faceDetected,
+    faceDetections: faceDetection.detections,
+    phoneDetected: phoneDetection.phoneDetected,
+    phoneConfidence: phoneDetection.phoneConfidence,
+    phoneBox: phoneDetection.phoneBox,
+  });
 
   // Plans & topics
   const [plans, setPlans] = useState<StudyPlanOut[]>([]);
@@ -65,10 +82,6 @@ export const SessionPage: React.FC = () => {
 
   // Marking done / updating
   const [markingDone, setMarkingDone] = useState(false);
-
-
-  const isSessionActive = session && !session.ended_at;
-  const isSessionEnded = session && session.ended_at;
 
 
   // ── Load plans on mount ────────────────────────────────────────────────────
@@ -133,8 +146,9 @@ export const SessionPage: React.FC = () => {
         explanation_mode: explanationMode,
         duration_minutes: durationMinutes,
       });
-      // Start face detection & focus tracking
-      faceDetection.startTracking();
+      // Start face detection & phone detection
+      await faceDetection.startTracking();
+      await phoneDetection.startPhoneDetection();
     } catch (err) {
       console.error('Failed to start session:', err);
     }
@@ -143,8 +157,9 @@ export const SessionPage: React.FC = () => {
   const handleEnd = async () => {
     if (!session) return;
     try {
-      // Stop face detection & focus tracking
+      // Stop face detection & phone detection
       faceDetection.stopTracking();
+      phoneDetection.stopPhoneDetection();
       await endSession(session.id);
       if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined);
       // Refresh history
@@ -531,7 +546,7 @@ export const SessionPage: React.FC = () => {
 
         {/* ── RIGHT: Focus console ───────────────────────────────────────── */}
         <div className="lg:col-span-1 space-y-5">
-          {/* Focus Tracker (camera + face detection) */}
+          {/* Focus Tracker (camera + face detection + proctoring) */}
           {(isSessionActive || faceDetection.cameraStatus !== 'idle') && (
             <FocusTracker
               videoRef={faceDetection.videoRef}
@@ -541,6 +556,15 @@ export const SessionPage: React.FC = () => {
               faceDetected={faceDetection.faceDetected}
               focusScore={faceDetection.focusScore}
               trackingActive={faceDetection.trackingActive}
+              proctoringActive={proctoring.proctoringActive}
+              peopleCount={proctoring.peopleCount}
+              phoneDetected={proctoring.phoneStatus === 'detected'}
+              phoneConfidence={phoneDetection.phoneConfidence}
+              phoneBox={phoneDetection.phoneBox}
+              activeWarning={proctoring.activeWarning}
+              activeViolationType={proctoring.activeViolationType}
+              totalWarnings={proctoring.totalWarnings}
+              isLookingAway={proctoring.isLookingAway}
             />
           )}
           {/* Timer card */}
@@ -618,7 +642,7 @@ export const SessionPage: React.FC = () => {
                 <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200">
                   <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-emerald-600 text-white font-bold shadow-md mb-3">✓</div>
                   <h3 className="text-base font-bold text-slate-900">Session Complete!</h3>
-                  <div className="grid grid-cols-2 gap-2 mt-3">
+                  <div className="grid grid-cols-3 gap-2 mt-3">
                     <div className="p-2.5 bg-white/80 rounded-xl border border-emerald-100">
                       <p className="text-[10px] font-semibold uppercase text-slate-400">Focus</p>
                       <p className="text-xl font-black text-emerald-600">
@@ -628,6 +652,12 @@ export const SessionPage: React.FC = () => {
                     <div className="p-2.5 bg-white/80 rounded-xl border border-emerald-100">
                       <p className="text-[10px] font-semibold uppercase text-slate-400">Duration</p>
                       <p className="text-xl font-black text-teal-600">{formatTime(elapsedTime)}</p>
+                    </div>
+                    <div className="p-2.5 bg-white/80 rounded-xl border border-emerald-100">
+                      <p className="text-[10px] font-semibold uppercase text-slate-400">Warnings</p>
+                      <p className={`text-xl font-black ${proctoring.totalWarnings === 0 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                        {proctoring.totalWarnings}
+                      </p>
                     </div>
                   </div>
                 </div>

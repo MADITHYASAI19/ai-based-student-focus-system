@@ -154,7 +154,29 @@ def record_focus_event(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Study session not found")
     if session.student_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to record this event")
-    allowed_events = {"phone_detected", "away", "sleepy", "tab_switch", "fullscreen_exit"}
+    allowed_events = {
+        "phone_detected",
+        "phone_cleared",
+        "away",
+        "no_face",
+        "face_detected",
+        "looking_away",
+        "multiple_faces",
+        "camera_error",
+        "camera_stopped",
+        "sleepy",
+        "tab_switch",
+        "fullscreen_exit",
+        # Support uppercase equivalents as well
+        "NO_FACE",
+        "FACE_DETECTED",
+        "LOOKING_AWAY",
+        "MULTIPLE_FACES",
+        "PHONE_DETECTED",
+        "PHONE_CLEARED",
+        "CAMERA_ERROR",
+        "CAMERA_STOPPED",
+    }
     if event_data.event_type not in allowed_events:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported focus event")
     event = FocusEvent(session_id=session.id, event_type=event_data.event_type)
