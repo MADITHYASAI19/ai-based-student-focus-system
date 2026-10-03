@@ -1,8 +1,9 @@
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.models.models import FocusEvent, StudySession, User
+from app.models.models import FocusEvent, FocusMetric, StudySession, User
 
 
 def start_session(
@@ -58,13 +59,42 @@ def calculate_focus_score(session: StudySession) -> float:
     return max(0.0, base_score - total_penalty)
 
 
+def calculate_focus_score_from_metrics(session: StudySession, db: Session) -> Optional[float]:
+    """Calculate focus score from FocusMetric data if available."""
+    metrics = db.query(FocusMetric).filter(
+        FocusMetric.session_id == session.id
+    ).all()
+    
+    if not metrics:
+        return None
+    
+    # Calculate average focus score from metrics
+    total_focus_score = sum(m.focus_score for m in metrics)
+    avg_focus_score = total_focus_score / len(metrics)
+    
+    return avg_focus_score
+
+
 def end_session(db: Session, session: StudySession) -> StudySession:
     """End a study session and compute focus score."""
     session.ended_at = datetime.utcnow()
-    score = calculate_focus_score(session)
-    session.focus_score = score
-    if session.productivity_score is None:
-        session.productivity_score = score
+    
+    # Try to get focus score from metrics first, fall back to event-based calculation
+    metrics_score = calculate_focus_score_from_metrics(session, db)
+    if metrics_score is not None:
+        session.focus_score = metrics_score
+        # Get average productivity score from metrics
+        metrics = db.query(FocusMetric).filter(
+            FocusMetric.session_id == session.id
+        ).all()
+        if metrics:
+            total_productivity = sum(m.productivity_score for m in metrics)
+            session.productivity_score = total_productivity / len(metrics)
+    else:
+        score = calculate_focus_score(session)
+        session.focus_score = score
+        if session.productivity_score is None:
+            session.productivity_score = score
 
     # Clear user's current session
     user = db.query(User).filter(User.id == session.student_id).first()

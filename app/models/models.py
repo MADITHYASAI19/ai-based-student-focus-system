@@ -202,6 +202,36 @@ class FaceTrackingEvent(Base):
     quiz_attempt: Mapped["QuizAttempt"] = relationship("QuizAttempt", backref="face_tracking_events")
 
 
+class FocusMetric(Base):
+    __tablename__ = "focus_metrics"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    session_id: Mapped[int] = mapped_column(Integer, ForeignKey("study_sessions.id"), nullable=False, index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Vision metrics
+    face_present: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    face_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ear: Mapped[float | None] = mapped_column(Float, nullable=True)  # Eye aspect ratio
+    eyes_closed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    drowsy: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    gaze: Mapped[str | None] = mapped_column(String, nullable=True)
+    head_pose_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    yaw: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pitch: Mapped[float | None] = mapped_column(Float, nullable=True)
+    roll: Mapped[float | None] = mapped_column(Float, nullable=True)
+    blink_rate: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    look_away_duration: Mapped[float | None] = mapped_column(Float, nullable=True)
+    
+    # Focus scores
+    focus_score: Mapped[float] = mapped_column(Float, nullable=False)
+    productivity_score: Mapped[float] = mapped_column(Float, nullable=False)
+    is_focused: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    
+    # Relationships
+    session: Mapped["StudySession"] = relationship("StudySession", backref="focus_metrics")
+
+
 class QuizAttempt(Base):
     __tablename__ = "quiz_attempts"
 
