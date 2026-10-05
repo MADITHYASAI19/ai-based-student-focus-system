@@ -15,6 +15,13 @@ from ai_service.preprocessing.chunker import chunk_text
 from ai_service.preprocessing.cleaner import clean_text
 from app.models.models import StudyDocument, Subject, Topic, User
 
+try:
+    import pytesseract
+    from PIL import Image
+    HAS_OCR = True
+except ImportError:
+    HAS_OCR = False
+
 logger = logging.getLogger(__name__)
 _UPLOAD_DIR = Path("uploads") / "study_documents"
 _ALLOWED_EXTENSIONS = {".pdf", ".txt", ".text"}
@@ -39,6 +46,27 @@ def _extract_text(filename: str, content_type: str, data: bytes) -> str:
     if suffix == ".pdf" or content_type == "application/pdf":
         reader = PdfReader(io.BytesIO(data))
         text = "\n\n".join(page.extract_text() or "" for page in reader.pages)
+        
+        # If text extraction yields very little text, try OCR
+        if len(text.strip()) < 100 and HAS_OCR:
+            logger.info("Text extraction yielded minimal text, attempting OCR")
+            try:
+                # Use pdf2image to convert PDF pages to images, then OCR
+                try:
+                    from pdf2image import convert_from_bytes
+                    images = convert_from_bytes(data)
+                    ocr_text = ""
+                    for page_num, img in enumerate(images):
+                        page_text = pytesseract.image_to_string(img)
+                        ocr_text += f"\n\nPage {page_num + 1}:\n{page_text}"
+                    
+                    if ocr_text.strip():
+                        text = ocr_text
+                        logger.info(f"OCR extracted {len(text)} characters from scanned PDF")
+                except ImportError:
+                    logger.warning("pdf2image not available, skipping OCR")
+            except Exception as e:
+                logger.warning(f"OCR failed: {e}, using extracted text")
     else:
         text = data.decode("utf-8", errors="replace")
     return clean_text(text)
@@ -115,6 +143,21 @@ def upload_focus_document(db: Session, user: User, upload: UploadFile) -> StudyD
     """Create the topic automatically from a Focus Session PDF/text upload."""
     filename = Path(upload.filename or "study_document").name
     topic_name = Path(filename).stem.replace("_", " ").strip() or "Uploaded Study Document"
+    subject = db.query(Subject).filter(Subject.name == "My Topics").first()
+    if not subject:
+        subject = Subject(name="My Topics")
+        db.add(subject)
+        db.flush()
+    topic = Topic(subject_id=subject.id, name=topic_name[:200], difficulty="medium", estimated_hours=1)
+    db.add(topic)
+    db.flush()
+    return upload_document(db, topic, user, upload)
+
+
+def upload_doubt_document(db: Session, user: User, upload: UploadFile) -> StudyDocument:
+    """Create the topic automatically from a Doubt Solver PDF/text upload."""
+    filename = Path(upload.filename or "study_document").name
+    topic_name = Path(filename).stem.replace("_", " ").strip() or "Doubt Solver Document"
     subject = db.query(Subject).filter(Subject.name == "My Topics").first()
     if not subject:
         subject = Subject(name="My Topics")

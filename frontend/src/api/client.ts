@@ -24,6 +24,7 @@ import type {
   QuizSubmission,
   AvailableTopic,
   TopicQuizStats,
+  UserTopicsResponse,
 } from './types';
 
 
@@ -116,6 +117,15 @@ export const uploadFocusDocument = async (file: File): Promise<StudyDocument> =>
   const formData = new FormData();
   formData.append('file', file);
   const response = await apiClient.post<StudyDocument>('/api/topics/focus/documents', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+export const uploadDoubtDocument = async (file: File): Promise<StudyDocument> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await apiClient.post<StudyDocument>('/api/doubts/documents', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
   return response.data;
@@ -240,6 +250,13 @@ export const finalizePlan = async (planId: number): Promise<StudyPlanOut> => {
 // Get current learning state
 export const getCurrentState = async () => {
   const response = await apiClient.get('/api/plans/state/current');
+  return response.data;
+};
+
+// Get user topics
+export const getUserTopics = async (search?: string): Promise<UserTopicsResponse> => {
+  const params = search ? { search } : {};
+  const response = await apiClient.get<UserTopicsResponse>('/api/plans/topics', { params });
   return response.data;
 };
 

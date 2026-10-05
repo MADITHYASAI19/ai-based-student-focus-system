@@ -69,6 +69,7 @@ def get_available_topics(student_id: int, db: Session) -> list[AvailableTopic]:
                 id=topic.id,
                 name=topic.name,
                 subject_name=subject.name,
+                subject_id=subject.id,
                 difficulty=topic.difficulty,
             )
         )

@@ -1,9 +1,27 @@
 from datetime import datetime
+import unicodedata
 
 from sqlalchemy.orm import Session
 
 from app.models.models import PlanItem, StudyPlan, Subject, Topic, User
 from app.schemas.plan import PlanItemCreate
+
+
+def normalize_topic_name(name: str) -> str:
+    """Normalize a topic name for duplicate detection.
+    
+    - Convert to lowercase
+    - Remove extra whitespace
+    - Remove accents (optional, for better matching)
+    """
+    # Remove extra whitespace
+    normalized = " ".join(name.strip().split())
+    # Convert to lowercase
+    normalized = normalized.lower()
+    # Optional: remove accents (uncomment if needed)
+    # normalized = unicodedata.normalize('NFKD', normalized)
+    # normalized = ''.join(c for c in normalized if not unicodedata.combining(c))
+    return normalized
 
 
 def create_plan(
@@ -30,11 +48,30 @@ def create_plan(
     for item in items:
         topic_id = item.topic_id
         if item.topic_name and item.topic_name.strip():
+            # Use normalized name for duplicate detection
+            normalized_name = normalize_topic_name(item.topic_name.strip())
+            
+            # Check for existing topic with normalized name comparison
             topic = (
                 db.query(Topic)
-                .filter(Topic.subject_id == personal_subject.id, Topic.name == item.topic_name.strip())
+                .filter(Topic.subject_id == personal_subject.id)
                 .first()
             )
+            
+            # Find if any existing topic matches (case-insensitive, whitespace-insensitive)
+            if topic:
+                existing_topics = (
+                    db.query(Topic)
+                    .filter(Topic.subject_id == personal_subject.id)
+                    .all()
+                )
+                matching_topic = None
+                for existing in existing_topics:
+                    if normalize_topic_name(existing.name) == normalized_name:
+                        matching_topic = existing
+                        break
+                topic = matching_topic
+            
             if not topic:
                 topic = Topic(
                     subject_id=personal_subject.id,
@@ -181,4 +218,69 @@ def get_user_current_state(db: Session, student_id: int) -> dict:
         "active_plan": active_plan,
         "current_session": current_session,
     }
+
+
+def get_user_topics(db: Session, student_id: int, search_query: str | None = None) -> list[dict]:
+    """Get all topics associated with a user (via their study plans or personal subjects).
+    
+    Args:
+        db: Database session
+        student_id: User ID
+        search_query: Optional search string to filter topics by name
+    
+    Returns:
+        List of topic dictionaries with id, name, subject, difficulty, estimated_hours
+    """
+    from sqlalchemy.orm import joinedload
+    
+    # Get all topics from "My Topics" subject (personal topics)
+    personal_subject = db.query(Subject).filter(Subject.name == "My Topics").first()
+    
+    if not personal_subject:
+        return []
+    
+    # Get all topics from personal subject
+    query = db.query(Topic).filter(Topic.subject_id == personal_subject.id)
+    
+    # Apply search filter if provided
+    if search_query and search_query.strip():
+        search_normalized = normalize_topic_name(search_query)
+        # Filter topics where normalized name contains search query
+        topics = query.all()
+        filtered = []
+        for topic in topics:
+            if search_normalized in normalize_topic_name(topic.name):
+                filtered.append(topic)
+        topics = filtered
+    else:
+        topics = query.all()
+    
+    # Get topic status from plan items if they exist in any plan
+    result = []
+    for topic in topics:
+        # Check if this topic is in any of the user's plans
+        plan_item = (
+            db.query(PlanItem)
+            .join(StudyPlan)
+            .filter(
+                PlanItem.topic_id == topic.id,
+                StudyPlan.student_id == student_id
+            )
+            .first()
+        )
+        
+        topic_dict = {
+            "id": topic.id,
+            "name": topic.name,
+            "subject": personal_subject.name,
+            "difficulty": topic.difficulty,
+            "estimated_hours": topic.estimated_hours,
+            "in_plan": plan_item is not None,
+            "status": plan_item.status if plan_item else None,
+            "plan_id": plan_item.plan_id if plan_item else None,
+            "item_id": plan_item.id if plan_item else None,
+        }
+        result.append(topic_dict)
+    
+    return result
 

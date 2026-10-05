@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePlan } from '../hooks/usePlan';
-import { breakdownTopics, updatePlanItemStatus, finalizePlan } from '../api/client';
-import type { StudyPlanCreate, TopicConcept, PlanItemOut } from '../api/types';
+import { breakdownTopics, updatePlanItemStatus, finalizePlan, getUserTopics } from '../api/client';
+import type { StudyPlanCreate, TopicConcept, PlanItemOut, UserTopic } from '../api/types';
 
 export const PlannerPage: React.FC = () => {
   const { plan, loading, error, hasPlan, createPlan, refetch } = usePlan();
@@ -16,13 +16,50 @@ export const PlannerPage: React.FC = () => {
   const [documentMessage, setDocumentMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [markingItem, setMarkingItem] = useState<number | null>(null);
   const [filterTab, setFilterTab] = useState<'all' | 'in_progress' | 'planned' | 'completed'>('all');
+  const [topicFilterTab, setTopicFilterTab] = useState<'all' | 'in_progress' | 'planned' | 'completed'>('all');
+  const [allUserTopics, setAllUserTopics] = useState<UserTopic[]>([]);
+  const [loadingTopics, setLoadingTopics] = useState(false);
+  const [topicsError, setTopicsError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [duplicateWarning, setDuplicateWarning] = useState<{ topicName: string; existingTopic: UserTopic } | null>(null);
   const navigate = useNavigate();
+
+  // Fetch all user topics on mount
+  useEffect(() => {
+    loadUserTopics();
+  }, []);
+
+  const loadUserTopics = async () => {
+    setLoadingTopics(true);
+    setTopicsError(null);
+    try {
+      const response = await getUserTopics();
+      setAllUserTopics(response.topics || []);
+    } catch (err: any) {
+      console.error('Failed to load user topics:', err);
+      setTopicsError('Failed to load topics. Please try again.');
+    } finally {
+      setLoadingTopics(false);
+    }
+  };
+
+  // Normalize topic name for duplicate detection (case-insensitive, whitespace-insensitive)
+  const normalizeTopicName = (name: string) => {
+    return name.toLowerCase().trim().replace(/\s+/g, ' ');
+  };
+
+  // Check for duplicate topics
+  const checkForDuplicate = (topicName: string): UserTopic | null => {
+    const normalized = normalizeTopicName(topicName);
+    return allUserTopics.find(topic => normalizeTopicName(topic.name) === normalized) || null;
+  };
 
   const handleMarkItemStatus = async (itemId: number, newStatus: 'pending' | 'in_progress' | 'done' | 'skipped') => {
     setMarkingItem(itemId);
     try {
       await updatePlanItemStatus(itemId, newStatus);
       await refetch();
+      await loadUserTopics(); // Reload topics to update status
     } catch {
       setDocumentMessage({ type: 'error', text: 'Failed to update topic status.' });
     } finally {
@@ -45,11 +82,44 @@ export const PlannerPage: React.FC = () => {
     if (!rawTopicsText.trim()) return;
     setIsGeneratingTopics(true);
     setDocumentMessage(null);
+    setDuplicateWarning(null);
     try {
       const res = await breakdownTopics(rawTopicsText.trim());
-      setGeneratedTopics(res.topics || []);
-      if (!res.topics || res.topics.length === 0) {
-        setDocumentMessage({ type: 'error', text: 'No topics could be extracted. Please enter more specific subject details.' });
+      const topics = res.topics || [];
+      
+      // Check for duplicates in generated topics
+      const duplicates: { topicName: string; existingTopic: UserTopic }[] = [];
+      const uniqueTopics: TopicConcept[] = [];
+      
+      for (const topic of topics) {
+        const duplicate = checkForDuplicate(topic.topic_name);
+        if (duplicate) {
+          duplicates.push({ topicName: topic.topic_name, existingTopic: duplicate });
+        } else {
+          uniqueTopics.push(topic);
+        }
+      }
+      
+      if (duplicates.length > 0) {
+        // Show duplicate warning for the first duplicate found
+        setDuplicateWarning(duplicates[0]);
+        setGeneratedTopics(uniqueTopics);
+        if (uniqueTopics.length === 0) {
+          setDocumentMessage({ 
+            type: 'error', 
+            text: `${duplicates.length} topic(s) already exist in your topics. Please use existing topics or create new ones.` 
+          });
+        } else {
+          setDocumentMessage({ 
+            type: 'error', 
+            text: `${duplicates.length} duplicate(s) found. ${uniqueTopics.length} unique topic(s) available to add.` 
+          });
+        }
+      } else {
+        setGeneratedTopics(topics);
+        if (topics.length === 0) {
+          setDocumentMessage({ type: 'error', text: 'No topics could be extracted. Please enter more specific subject details.' });
+        }
       }
     } catch (err: any) {
       const detail = err.response?.data?.detail || err.message || 'We could not generate your study plan right now. Please try again.';
@@ -77,6 +147,8 @@ export const PlannerPage: React.FC = () => {
       setGeneratedTopics([]);
       setShowCreateForm(false);
       setDocumentMessage({ type: 'success', text: 'Study plan created successfully.' });
+      // Reload user topics after creating plan
+      await loadUserTopics();
     } catch (err: any) {
       setDocumentMessage({ type: 'error', text: err.response?.data?.detail || 'Failed to create the study plan.' });
     } finally {
@@ -123,6 +195,28 @@ export const PlannerPage: React.FC = () => {
   const progressPct = items.length > 0 ? Math.round((doneCount / items.length) * 100) : 0;
   const totalDuration = items.reduce((acc, curr) => acc + (curr.duration_minutes || 0), 0);
 
+  // Filter all user topics based on search query and filter tab
+  let filteredTopics = searchQuery.trim()
+    ? allUserTopics.filter(topic => 
+        normalizeTopicName(topic.name).includes(normalizeTopicName(searchQuery))
+      )
+    : allUserTopics;
+
+  // Apply topic filter tab
+  if (topicFilterTab === 'in_progress') {
+    filteredTopics = filteredTopics.filter(t => t.status === 'in_progress');
+  } else if (topicFilterTab === 'planned') {
+    filteredTopics = filteredTopics.filter(t => t.status === 'pending');
+  } else if (topicFilterTab === 'completed') {
+    filteredTopics = filteredTopics.filter(t => t.status === 'done');
+  }
+
+  // Calculate stats from all user topics
+  const totalTopicsCount = allUserTopics.length;
+  const inProgressTopicsCount = allUserTopics.filter(t => t.status === 'in_progress').length;
+  const plannedTopicsCount = allUserTopics.filter(t => t.status === 'pending').length;
+  const completedTopicsCount = allUserTopics.filter(t => t.status === 'done').length;
+
   const displayedItems = filterTab === 'all'
     ? items
     : filterTab === 'in_progress'
@@ -161,8 +255,8 @@ export const PlannerPage: React.FC = () => {
         </div>
       )}
 
-      {/* Overview Stats */}
-      {hasPlan && (
+      {/* Overview Stats - Based on ALL user topics */}
+      {(hasPlan || allUserTopics.length > 0) && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3.5">
@@ -173,7 +267,7 @@ export const PlannerPage: React.FC = () => {
               </div>
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Total Topics</p>
-                <p className="text-xl font-extrabold text-slate-900">{items.length}</p>
+                <p className="text-xl font-extrabold text-slate-900">{totalTopicsCount}</p>
               </div>
             </div>
 
@@ -183,7 +277,7 @@ export const PlannerPage: React.FC = () => {
               </div>
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">In Progress</p>
-                <p className="text-xl font-extrabold text-amber-600">{inProgressItems.length}</p>
+                <p className="text-xl font-extrabold text-amber-600">{inProgressTopicsCount}</p>
               </div>
             </div>
 
@@ -193,7 +287,7 @@ export const PlannerPage: React.FC = () => {
               </div>
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Completed</p>
-                <p className="text-xl font-extrabold text-emerald-600">{completedItems.length}</p>
+                <p className="text-xl font-extrabold text-emerald-600">{completedTopicsCount}</p>
               </div>
             </div>
 
@@ -203,29 +297,31 @@ export const PlannerPage: React.FC = () => {
               </div>
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Planned</p>
-                <p className="text-xl font-extrabold text-slate-700">{plannedItems.length}</p>
+                <p className="text-xl font-extrabold text-slate-700">{plannedTopicsCount}</p>
               </div>
             </div>
           </div>
 
           {/* Progress bar */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-sm font-bold text-slate-800">Overall Study Plan Progress</span>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {completedItems.length} of {items.length} topics finished · {totalDuration} total minutes
-                </p>
+          {hasPlan && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-sm font-bold text-slate-800">Overall Study Plan Progress</span>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {completedItems.length} of {items.length} topics finished · {totalDuration} total minutes
+                  </p>
+                </div>
+                <span className="text-lg font-black text-indigo-600">{progressPct}%</span>
               </div>
-              <span className="text-lg font-black text-indigo-600">{progressPct}%</span>
+              <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className="h-3 bg-gradient-to-r from-indigo-500 via-amber-500 to-emerald-500 rounded-full transition-all duration-500"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
             </div>
-            <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
-              <div
-                className="h-3 bg-gradient-to-r from-indigo-500 via-amber-500 to-emerald-500 rounded-full transition-all duration-500"
-                style={{ width: `${progressPct}%` }}
-              />
-            </div>
-          </div>
+          )}
         </>
       )}
 
@@ -294,6 +390,47 @@ export const PlannerPage: React.FC = () => {
               </div>
             )}
 
+            {/* Duplicate Warning */}
+            {duplicateWarning && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center font-bold text-xs flex-shrink-0 mt-0.5">
+                    !
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-amber-900">Topic Already Exists</p>
+                    <p className="text-xs text-amber-800 mt-1">
+                      The topic <strong>"{duplicateWarning.topicName}"</strong> already exists in your topics.
+                    </p>
+                    <div className="mt-3 flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          // Navigate to session with the existing topic
+                          if (duplicateWarning.existingTopic.item_id) {
+                            updatePlanItemStatus(duplicateWarning.existingTopic.item_id, 'in_progress').then(() => {
+                              loadUserTopics();
+                              refetch();
+                            });
+                          }
+                          setShowCreateForm(false);
+                          navigate('/session');
+                        }}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-600 hover:bg-amber-700 text-white shadow-xs transition-all cursor-pointer"
+                      >
+                        Open Existing Topic
+                      </button>
+                      <button
+                        onClick={() => setDuplicateWarning(null)}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white text-amber-700 hover:bg-amber-100 border border-amber-300 transition-all cursor-pointer"
+                      >
+                        Ignore & Create New
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                 Target Exam / Completion Deadline (Optional)
@@ -323,6 +460,186 @@ export const PlannerPage: React.FC = () => {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* All User Topics Section */}
+      {(allUserTopics.length > 0 || loadingTopics) && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          {/* Header & Search */}
+          <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-col gap-3">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+              <div className="flex items-center gap-3">
+                <h2 className="font-extrabold text-slate-900 text-base">My Topics</h2>
+                <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-xs font-bold">
+                  {allUserTopics.length} total
+                </span>
+              </div>
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search topics..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 pr-4 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 w-48 sm:w-64"
+                />
+                <svg className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+            </div>
+
+            {/* Topic Filter Tabs */}
+            <div className="flex items-center gap-1.5 bg-slate-200/60 p-1 rounded-xl text-xs font-bold self-start">
+              <button
+                onClick={() => setTopicFilterTab('all')}
+                className={`px-3 py-1.5 rounded-lg transition-all ${topicFilterTab === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                All ({allUserTopics.length})
+              </button>
+              <button
+                onClick={() => setTopicFilterTab('in_progress')}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${topicFilterTab === 'in_progress' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                <span>◉</span> In Progress ({inProgressTopicsCount})
+              </button>
+              <button
+                onClick={() => setTopicFilterTab('planned')}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${topicFilterTab === 'planned' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                <span>○</span> Planned ({plannedTopicsCount})
+              </button>
+              <button
+                onClick={() => setTopicFilterTab('completed')}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${topicFilterTab === 'completed' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                <span>✓</span> Completed ({completedTopicsCount})
+              </button>
+            </div>
+          </div>
+
+          {/* Topics List - Card Grid */}
+          {loadingTopics ? (
+            <div className="p-12 text-center text-slate-500">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-slate-300 border-t-indigo-600 mx-auto mb-3"></div>
+              <p className="text-sm font-medium">Loading your topics...</p>
+            </div>
+          ) : topicsError ? (
+            <div className="p-12 text-center">
+              <p className="text-sm text-red-600 font-medium mb-3">{topicsError}</p>
+              <button
+                onClick={loadUserTopics}
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all"
+              >
+                Retry
+              </button>
+            </div>
+          ) : filteredTopics.length > 0 ? (
+            <div className="p-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {filteredTopics.map((topic) => {
+                  const isInProgress = topic.status === 'in_progress';
+                  const isDone = topic.status === 'done';
+                  const isPlanned = topic.status === 'pending';
+                  const notInPlan = !topic.in_plan;
+
+                  return (
+                    <div
+                      key={topic.id}
+                      className={`rounded-xl border p-5 transition-all hover:shadow-md ${
+                        isInProgress ? 'bg-amber-50 border-amber-300' :
+                        isDone ? 'bg-emerald-50 border-emerald-300' : 
+                        notInPlan ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200'
+                      }`}
+                    >
+                      {/* Topic Name - Most Important */}
+                      <h3 className={`text-base font-bold mb-3 ${isDone ? 'line-through text-slate-500' : 'text-slate-900'}`}>
+                        {topic.name}
+                      </h3>
+
+                      {/* Topic Details */}
+                      <div className="space-y-2 mb-4">
+                        {/* Status */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-500">Status:</span>
+                          {isInProgress && (
+                            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide rounded-md bg-amber-100 text-amber-800 border border-amber-200">
+                              IN PROGRESS
+                            </span>
+                          )}
+                          {isPlanned && (
+                            <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-md bg-slate-100 text-slate-600 border border-slate-200">
+                              PLANNED
+                            </span>
+                          )}
+                          {isDone && (
+                            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              COMPLETED
+                            </span>
+                          )}
+                          {notInPlan && (
+                            <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-md bg-indigo-50 text-indigo-600 border border-indigo-200">
+                              NOT IN PLAN
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Subject */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-500">Subject:</span>
+                          <span className="text-xs font-medium text-slate-900">{topic.subject}</span>
+                        </div>
+
+                        {/* Difficulty */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-500">Difficulty:</span>
+                          <span className="text-xs font-medium capitalize text-slate-900">{topic.difficulty}</span>
+                        </div>
+
+                        {/* Duration */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-500">Duration:</span>
+                          <span className="text-xs font-medium text-slate-900">{topic.estimated_hours}h</span>
+                        </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex items-center gap-2 pt-3 border-t border-slate-200/50">
+                        {topic.item_id && (
+                          <button
+                            onClick={() => {
+                              if (topic.status !== 'in_progress') {
+                                updatePlanItemStatus(topic.item_id!, 'in_progress').then(() => {
+                                  loadUserTopics();
+                                  refetch();
+                                });
+                              }
+                              navigate('/session');
+                            }}
+                            className="flex-1 px-3 py-2 text-xs font-bold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all cursor-pointer"
+                          >
+                            Study
+                          </button>
+                        )}
+                        <button
+                          onClick={() => navigate('/quiz')}
+                          className="flex-1 px-3 py-2 text-xs font-bold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 transition-all cursor-pointer"
+                        >
+                          Quiz
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="p-12 text-center text-slate-500">
+              <p className="text-sm font-semibold">
+                {searchQuery ? `No topics match "${searchQuery}"` : 'No topics found'}
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -520,15 +837,19 @@ export const PlannerPage: React.FC = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
           </div>
-          <h3 className="text-lg font-bold text-slate-900 mb-1.5">No Study Plan Created Yet</h3>
+          <h3 className="text-lg font-bold text-slate-900 mb-1.5">
+            {allUserTopics.length > 0 ? 'No Active Study Plan' : 'No Topics Yet'}
+          </h3>
           <p className="text-sm text-slate-500 max-w-sm mx-auto mb-6">
-            Enter what you want to study above, and our AI pipeline will create your organized, scheduled study plan.
+            {allUserTopics.length > 0
+              ? 'You have topics but no active study plan. Create a plan to organize your study schedule.'
+              : 'Enter what you want to study above, and our AI pipeline will create your organized, scheduled study plan.'}
           </p>
           <button
             onClick={() => setShowCreateForm(true)}
             className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm shadow-md shadow-indigo-600/20 active:scale-95 transition-all cursor-pointer"
           >
-            Create Your First Plan
+            {allUserTopics.length > 0 ? 'Create Study Plan' : 'Create Your First Plan'}
           </button>
         </div>
       )}

@@ -1,101 +1,74 @@
 import React, { useState, useRef } from 'react';
-import { askDoubt, uploadDoubtDocument } from '../api/client';
+import { askDoubt } from '../api/client';
 import type { DoubtAnswer, AnswerSection } from '../api/types';
 
 interface Message {
   id: string;
   sender: 'user' | 'ai';
   text: string;
-  subjectName: string;
   confidence?: 'high' | 'low';
   sourceChunks?: string[];
   sections?: AnswerSection[];
   sourceType?: 'pdf' | 'ai' | 'mixed' | 'none';
   timestamp: Date;
+  subjectContext?: string;
 }
 
-const AVAILABLE_SUBJECTS = [
-  { id: 1, name: 'Mathematics' },
-  { id: 4, name: 'Biology' },
-];
+interface DoubtSolverModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  topicId?: number;
+  topicName?: string;
+  subjectId?: number;
+  subjectName?: string;
+}
 
-const AVAILABLE_TOPICS = [
-  { id: 1, name: 'Binary Search Trees', subjectId: 1 },
-  { id: 4, name: 'Quadratic Equations', subjectId: 1 },
-  { id: 5, name: 'Cell Structure & Mitochondria', subjectId: 4 },
-];
-
-const SUGGESTED_QUESTIONS = [
-  { text: 'What is the quadratic formula?', subjectId: 1 },
-  { text: 'What does the discriminant tell us about quadratic roots?', subjectId: 1 },
-  { text: 'What is the function of mitochondria in eukaryotic cells?', subjectId: 4 },
-  { text: 'How do you bake a chocolate cake?', subjectId: 1, isOffTopic: true },
-];
-
-export const DoubtChatPage: React.FC = () => {
+export const DoubtSolverModal: React.FC<DoubtSolverModalProps> = ({
+  isOpen,
+  onClose,
+  topicId,
+  topicName,
+  subjectId,
+  subjectName,
+}) => {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
       sender: 'ai',
-      text: "Hello! I'm your AI Study Companion tutor. Ask me any question, and I'll provide answers grounded in your PDF notes when available, supplementing with general AI knowledge when needed.",
-      subjectName: 'All Subjects',
+      text: topicName 
+        ? `Hello! I'm your AI tutor for ${topicName}. Ask me any question about this topic, and I'll help you understand it better.`
+        : "Hello! I'm your AI Study Companion tutor. Ask me any question, and I'll provide answers grounded in your PDF notes when available, supplementing with general AI knowledge when needed.",
+      subjectContext: subjectName || 'All Subjects',
       confidence: 'high',
       timestamp: new Date(),
     },
   ]);
   const [question, setQuestion] = useState('');
-  const [selectedSubjectId, setSelectedSubjectId] = useState<number | null>(null);
-  const [selectedTopicId, setSelectedTopicId] = useState<number | undefined>(undefined);
   const [sourceMode, setSourceMode] = useState<'pdf+ai' | 'pdf_only' | 'general_ai'>('pdf+ai');
-  const [uploadedDocument, setUploadedDocument] = useState<{filename: string, documentId: number} | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleFileUpload = async (file: File) => {
-    if (!file) return;
-    
-    setUploading(true);
-    setError(null);
-    
-    try {
-      const document = await uploadDoubtDocument(file);
-      setUploadedDocument({
-        filename: document.filename,
-        documentId: document.id
-      });
-      setSelectedTopicId(document.topic_id);
-      // Auto-switch to subject containing this document
-      const topicSubject = AVAILABLE_SUBJECTS.find(s => s.id === 1); // Default to Mathematics if unsure
-      if (topicSubject) {
-        setSelectedSubjectId(topicSubject.id);
-      }
-    } catch (err: any) {
-      console.error('Failed to upload document:', err);
-      const errorMessage = err.response?.data?.detail || 'Failed to upload document. Please try again.';
-      setError(errorMessage);
-    } finally {
-      setUploading(false);
-    }
-  };
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  React.useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   const handleAskDoubt = async (questionText: string) => {
     const trimmed = questionText.trim();
     if (!trimmed || loading) return;
 
-    // If no subject selected, use general AI mode
-    const effectiveSubjectId = selectedSubjectId ?? AVAILABLE_SUBJECTS[0].id;
-    const effectiveSourceMode = (!selectedSubjectId && !uploadedDocument) ? 'general_ai' : sourceMode;
-    
-    const currentSubject = AVAILABLE_SUBJECTS.find((s) => s.id === effectiveSubjectId);
-    const subjectName = currentSubject ? currentSubject.name : `Subject #${effectiveSubjectId}`;
+    const effectiveSubjectId = subjectId;
+    const effectiveSourceMode = sourceMode;
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       sender: 'user',
       text: trimmed,
-      subjectName,
+      subjectContext: subjectName || 'General',
       timestamp: new Date(),
     };
 
@@ -105,7 +78,6 @@ export const DoubtChatPage: React.FC = () => {
     setLoading(true);
 
     try {
-      // Build conversation history (last 5 messages, excluding welcome)
       const history = messages
         .filter(m => m.id !== 'welcome')
         .slice(-5)
@@ -117,7 +89,7 @@ export const DoubtChatPage: React.FC = () => {
       const response: DoubtAnswer = await askDoubt({
         question: trimmed,
         subject_id: effectiveSubjectId,
-        topic_id: uploadedDocument ? selectedTopicId : undefined,
+        topic_id: topicId,
         source_mode: effectiveSourceMode,
         conversation_history: history,
       });
@@ -126,7 +98,7 @@ export const DoubtChatPage: React.FC = () => {
         id: `ai-${Date.now()}`,
         sender: 'ai',
         text: response.answer_text,
-        subjectName,
+        subjectContext: subjectName || 'General',
         confidence: response.confidence,
         sourceChunks: response.source_chunk_ids,
         sections: response.sections,
@@ -200,141 +172,22 @@ export const DoubtChatPage: React.FC = () => {
     );
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Title */}
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-          AI Doubt Tutor
-        </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Ask anything. Upload a document when you want answers based on your study material.
-        </p>
-      </div>
-
-      {error && (
-        <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">
-          {error}
-        </div>
-      )}
-
-      {/* PDF Upload Section */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
-            📄 Upload PDF (Optional)
-          </p>
-          {uploadedDocument && (
-            <button
-              type="button"
-              onClick={() => setUploadedDocument(null)}
-              className="text-xs text-red-600 hover:text-red-700 font-medium"
-            >
-              Remove
-            </button>
-          )}
-        </div>
-        
-        {!uploadedDocument ? (
-          <div
-            onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/50 transition-colors"
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.txt"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleFileUpload(file);
-              }}
-              className="hidden"
-            />
-            <p className="text-sm text-slate-600">
-              {uploading ? 'Processing document...' : 'Drag & drop or click to upload'}
-            </p>
-            <p className="text-xs text-slate-400 mt-1">
-              PDF or text files up to 10MB
-            </p>
-          </div>
-        ) : (
-          <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-            <span className="text-2xl">📄</span>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-slate-800">{uploadedDocument.filename}</p>
-              <p className="text-xs text-emerald-700">Ready to use</p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Suggested Quick Questions */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs">
-        <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">
-          💡 Try Sample Queries
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {SUGGESTED_QUESTIONS.map((item, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => {
-                if (!item.isOffTopic) {
-                  setSelectedSubjectId(item.subjectId);
-                }
-                handleAskDoubt(item.text);
-              }}
-              className="text-xs px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-700 transition-colors cursor-pointer text-left"
-            >
-              {item.isOffTopic ? '⚠️ Off-Topic Guardrail: ' : ''}{item.text}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Chat Messages Stream */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs flex flex-col min-h-[480px]">
-        {/* Subject Header */}
-        <div className="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 rounded-t-2xl">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="text-xs font-semibold text-slate-700">
-              {uploadedDocument ? 'Document RAG + AI Active' : 'General AI Active'}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label className="text-xs font-semibold text-slate-500">Subject:</label>
-            <select
-              value={selectedSubjectId ?? ''}
-              onChange={(e) => setSelectedSubjectId(e.target.value ? Number(e.target.value) : null)}
-              className="text-xs font-semibold bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="">General AI (No subject)</option>
-              {AVAILABLE_SUBJECTS.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-            {selectedSubjectId && (
-              <>
-                <label className="text-xs font-semibold text-slate-500">Topic:</label>
-                <select
-                  value={selectedTopicId ?? ''}
-                  onChange={(e) => setSelectedTopicId(e.target.value ? Number(e.target.value) : undefined)}
-                  className="text-xs font-semibold bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="">All subject notes</option>
-                  {AVAILABLE_TOPICS.filter((topic) => topic.subjectId === selectedSubjectId).map((topic) => (
-                    <option key={topic.id} value={topic.id}>
-                      {topic.name}
-                    </option>
-                  ))}
-                </select>
-              </>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+        {/* Modal Header */}
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50 rounded-t-2xl">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">AI Doubt Solver</h2>
+            {topicName && (
+              <p className="text-sm text-slate-500 mt-0.5">
+                Topic: {topicName}
+              </p>
             )}
-            <label className="text-xs font-semibold text-slate-500">Source Mode:</label>
+          </div>
+          <div className="flex items-center gap-3">
             <select
               value={sourceMode}
               onChange={(e) => setSourceMode(e.target.value as 'pdf+ai' | 'pdf_only' | 'general_ai')}
@@ -344,11 +197,26 @@ export const DoubtChatPage: React.FC = () => {
               <option value="pdf_only">PDF Only</option>
               <option value="general_ai">General AI</option>
             </select>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg hover:bg-slate-200 text-slate-500 transition-colors"
+              title="Close"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         </div>
 
-        {/* Message Stream */}
-        <div className="flex-1 p-6 space-y-5 overflow-y-auto max-h-[520px]">
+        {error && (
+          <div className="mx-6 mt-4 p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">
+            {error}
+          </div>
+        )}
+
+        {/* Chat Messages */}
+        <div className="flex-1 p-6 space-y-5 overflow-y-auto">
           {messages.map((msg) => (
             <div
               key={msg.id}
@@ -384,7 +252,7 @@ export const DoubtChatPage: React.FC = () => {
                         {renderSourceLabel(msg.sourceType)}
                       </span>
                     )}
-                    <span className="text-[11px] text-slate-400 font-medium">Scope: {msg.subjectName}</span>
+                    <span className="text-[11px] text-slate-400 font-medium">Scope: {msg.subjectContext}</span>
                   </div>
                 )}
 
@@ -428,6 +296,7 @@ export const DoubtChatPage: React.FC = () => {
               </div>
             </div>
           )}
+          <div ref={messagesEndRef} />
         </div>
 
         {/* Input Bar */}
@@ -441,7 +310,7 @@ export const DoubtChatPage: React.FC = () => {
           >
             <input
               type="text"
-              placeholder="Ask a question..."
+              placeholder="Ask a question about this topic..."
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               disabled={loading}

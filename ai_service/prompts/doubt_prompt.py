@@ -67,11 +67,16 @@ IMPORTANT RULES:
 8. Keep each section concise and focused"""
 
 
-def build_doubt_prompt(question: str, context_chunks: list[str]) -> list[dict[str, str]]:
+def build_doubt_prompt(question: str, context_chunks: list[str], conversation_history: list[dict] | None = None) -> list[dict[str, str]]:
     """Build OpenAI-compatible messages for a context-grounded doubt answer.
 
     Context chunks are numbered in the user message so the eventual LLM answer
     can cite the exact source material used to answer the student's question.
+    
+    Args:
+        question: The student's question
+        context_chunks: List of context chunk texts
+        conversation_history: Optional list of previous messages for context
     """
     if not isinstance(question, str) or not question.strip():
         raise ValueError("question must be a non-empty string")
@@ -89,10 +94,18 @@ def build_doubt_prompt(question: str, context_chunks: list[str]) -> list[dict[st
 {question.strip()}
 ### END QUESTION ###"""
 
-    return [
+    messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_prompt},
     ]
+    
+    # Add conversation history if provided (last 5 messages)
+    if conversation_history:
+        recent_history = conversation_history[-5:] if len(conversation_history) > 5 else conversation_history
+        messages.extend(recent_history)
+    
+    messages.append({"role": "user", "content": user_prompt})
+    
+    return messages
 
 
 def build_alternate_style_prompt(

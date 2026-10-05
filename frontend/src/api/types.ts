@@ -244,15 +244,33 @@ export interface AvailableTopic {
   id: number;
   name: string;
   subject_name: string;
+  subject_id: number;
   difficulty: string;
+}
+
+export interface UserTopic {
+  id: number;
+  name: string;
+  subject: string;
+  difficulty: string;
+  estimated_hours: number;
+  in_plan: boolean;
+  status: string | null;
+  plan_id: number | null;
+  item_id: number | null;
+}
+
+export interface UserTopicsResponse {
+  topics: UserTopic[];
 }
 
 
 export interface DoubtRequest {
   question: string;
-  subject_id: number;
+  subject_id?: number;
   topic_id?: number;
   source_mode?: 'pdf+ai' | 'pdf_only' | 'general_ai';
+  conversation_history?: Array<{ role: string; content: string }>;
 }
 
 export interface AnswerSection {

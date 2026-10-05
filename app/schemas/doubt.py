@@ -5,9 +5,10 @@ from pydantic import BaseModel
 class DoubtRequest(BaseModel):
     """Schema for doubt resolution request."""
     question: str
-    subject_id: int
+    subject_id: int | None = None
     topic_id: int | None = None
     source_mode: Optional[Literal["pdf+ai", "pdf_only", "general_ai"]] = "pdf+ai"
+    conversation_history: Optional[list[dict[str, str]]] = None  # For conversational context
 
 
 class AnswerSection(BaseModel):

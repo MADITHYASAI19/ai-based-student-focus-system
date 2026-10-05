@@ -14,7 +14,7 @@ from app.schemas.plan import (
     TopicExplainResponse,
     PlanItemOut,
 )
-from app.services.plan_service import create_plan, get_plan, update_item_status, finalize_plan, get_active_plan, get_user_current_state
+from app.services.plan_service import create_plan, get_plan, update_item_status, finalize_plan, get_active_plan, get_user_current_state, get_user_topics
 from ai_service.generation.topic_explainer import generate_topic_explanation
 from ai_service.generation.pipeline import TopicPipeline
 import logging
@@ -145,6 +145,17 @@ def get_current_learning_state(
 ):
     """Get the current learning state (active plan, session) for the authenticated user."""
     return get_user_current_state(db=db, student_id=current_user.id)
+
+
+@router.get("/topics", status_code=status.HTTP_200_OK)
+def get_user_topics_endpoint(
+    search: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all topics for the authenticated user, optionally filtered by search query."""
+    topics = get_user_topics(db=db, student_id=current_user.id, search_query=search)
+    return {"topics": topics}
 
 
 @router.get("/{student_id}", response_model=StudyPlanOut)

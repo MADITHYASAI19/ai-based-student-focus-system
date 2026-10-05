@@ -169,6 +169,7 @@ class AvailableTopic(BaseModel):
     id: int
     name: str
     subject_name: str
+    subject_id: int
     difficulty: str
 
 

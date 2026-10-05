@@ -23,7 +23,8 @@ def resolve_doubt(
             request.question, 
             request.subject_id, 
             request.topic_id,
-            request.source_mode or "pdf+ai"
+            request.source_mode or "pdf+ai",
+            request.conversation_history
         )
     except ValueError as e:
         # Validation or context retrieval failure

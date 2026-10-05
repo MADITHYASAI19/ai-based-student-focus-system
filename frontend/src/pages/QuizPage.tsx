@@ -11,6 +11,7 @@ import {
 import { useFaceDetection } from '../hooks/useFaceDetection';
 import { usePhoneDetection } from '../hooks/usePhoneDetection';
 import { useProctoring } from '../hooks/useProctoring';
+import { DoubtSolverModal } from '../components/DoubtSolverModal';
 import type {
   QuizOut,
   QuizAttemptOut,
@@ -61,6 +62,9 @@ export const QuizPage: React.FC = () => {
   const [history, setHistory] = useState<QuizAttemptOut[]>([]);
   const [topicStats, setTopicStats] = useState<TopicQuizStats | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+
+  // Doubt solver modal
+  const [showDoubtSolver, setShowDoubtSolver] = useState(false);
 
   // ── Proctoring: reuse existing hooks (same as SessionPage) ─────────────────
   const faceDetection = useFaceDetection();
@@ -994,6 +998,18 @@ export const QuizPage: React.FC = () => {
               </h2>
             </div>
             <div className="flex items-center gap-3">
+              {/* Ask AI Button */}
+              <button
+                onClick={() => setShowDoubtSolver(true)}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 bg-violet-100 text-violet-700 hover:bg-violet-200 transition-all"
+                title="Ask AI for help"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Ask AI
+              </button>
+
               {/* Face Tracking HUD badge */}
               {faceTrackingEnabled && (
                 <button
@@ -1365,6 +1381,16 @@ export const QuizPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Doubt Solver Modal */}
+      <DoubtSolverModal
+        isOpen={showDoubtSolver}
+        onClose={() => setShowDoubtSolver(false)}
+        topicId={quiz?.topic_id}
+        topicName={quiz?.topic_name}
+        subjectId={selectedTopic?.subject_id}
+        subjectName={selectedTopic?.subject_name}
+      />
     </div>
   );
 };

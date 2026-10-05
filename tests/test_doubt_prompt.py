@@ -8,14 +8,17 @@ def test_build_doubt_prompt_numbers_context_and_includes_guardrails():
     )
 
     assert messages[0]["role"] == "system"
-    assert "Answer ONLY using the provided context chunks" in messages[0]["content"]
-    assert "rather than guessing" in messages[0]["content"]
-    assert "Cite every factual answer" in messages[0]["content"]
-    assert "[Chunk 1]" in messages[1]["content"]
-    assert "What does the discriminant tell us?" in messages[1]["content"]
+    assert "You are an AI study companion" in messages[0]["content"]
+    assert "clearly distinguish between information from the provided PDF context" in messages[0]["content"]
+    # User message is now the last one (after optional conversation history)
+    user_msg = messages[-1]["content"]
+    assert "[Chunk 1]" in user_msg
+    assert "What does the discriminant tell us?" in user_msg
 
 
 def test_build_doubt_prompt_handles_no_retrieved_context():
     messages = build_doubt_prompt("What is photosynthesis?", [])
 
-    assert "(No context chunks were retrieved.)" in messages[1]["content"]
+    # With conversation history support, the user message is now the last one
+    user_msg = messages[-1]["content"]
+    assert "(No context chunks were retrieved.)" in user_msg

@@ -116,7 +116,7 @@ def _determine_source_type(sections: list[AnswerSection]) -> str:
     return "none"
 
 
-def answer_doubt(question: str, context_chunks: list[dict], source_mode: str = "pdf+ai") -> DoubtAnswer:
+def answer_doubt(question: str, context_chunks: list[dict], source_mode: str = "pdf+ai", conversation_history: list[dict] | None = None) -> DoubtAnswer:
     """Answer a student's doubt using context-grounded LLM generation.
     
     Args:
@@ -124,6 +124,7 @@ def answer_doubt(question: str, context_chunks: list[dict], source_mode: str = "
         context_chunks: List of relevant context chunks from RAG retrieval,
                         each with keys: id, text, metadata, similarity_score
         source_mode: "pdf+ai" (default), "pdf_only", or "general_ai"
+        conversation_history: Optional list of previous messages for context
         
     Returns:
         DoubtAnswer: The answer with source chunk IDs, confidence, and source-aware sections
@@ -139,8 +140,15 @@ def answer_doubt(question: str, context_chunks: list[dict], source_mode: str = "
         try:
             messages = [
                 {"role": "system", "content": "You are a helpful AI study companion. Answer the student's question clearly and concisely."},
-                {"role": "user", "content": question.strip()}
             ]
+            
+            # Add conversation history if provided (last 5 messages)
+            if conversation_history:
+                recent_history = conversation_history[-5:] if len(conversation_history) > 5 else conversation_history
+                messages.extend(recent_history)
+            
+            messages.append({"role": "user", "content": question.strip()})
+            
             answer = _call_llm(messages)
             
             if not answer.strip():
@@ -185,7 +193,7 @@ def answer_doubt(question: str, context_chunks: list[dict], source_mode: str = "
     # Step 2: Build prompt and call LLM
     try:
         chunk_texts = [c["text"] for c in context_chunks]
-        messages = build_doubt_prompt(question, chunk_texts)
+        messages = build_doubt_prompt(question, chunk_texts, conversation_history)
         
         logger.info(f"Answering doubt with {len(context_chunks)} context chunks (top similarity: {similarity_score:.3f}, source_mode: {source_mode})")
         answer = _call_llm(messages)
@@ -219,7 +227,8 @@ def answer_doubt_alternate_style(
     question: str,
     context_chunks: list[dict],
     prior_attempts: list[str],
-    source_mode: str = "pdf+ai"
+    source_mode: str = "pdf+ai",
+    conversation_history: list[dict] | None = None
 ) -> DoubtAnswer:
     """Answer a student's doubt using a different explanation style than prior attempts.
     
@@ -254,12 +263,18 @@ def answer_doubt_alternate_style(
     # Handle source_mode: general_ai skips RAG entirely
     if source_mode == "general_ai":
         try:
-            client = _get_client()
             messages = [
                 {"role": "system", "content": "You are a helpful AI study companion. Explain using a different approach than previous attempts."},
-                {"role": "user", "content": f"Question: {question.strip()}\n\nPrevious attempts:\n" + "\n\n".join(prior_attempts)}
             ]
-            answer = _call_llm(client, messages)
+            
+            # Add conversation history if provided (last 5 messages)
+            if conversation_history:
+                recent_history = conversation_history[-5:] if len(conversation_history) > 5 else conversation_history
+                messages.extend(recent_history)
+            
+            messages.append({"role": "user", "content": f"Question: {question.strip()}\n\nPrevious attempts:\n" + "\n\n".join(prior_attempts)})
+            
+            answer = _call_llm(messages)
             
             if not answer.strip():
                 raise ValueError("LLM returned empty response")
@@ -301,12 +316,11 @@ def answer_doubt_alternate_style(
     
     # Step 2: Build prompt with prior attempts and call LLM
     try:
-        client = _get_client()
         chunk_texts = [c["text"] for c in context_chunks]
         messages = build_alternate_style_prompt(question, chunk_texts, prior_attempts)
         
         logger.info(f"Answering doubt with alternate style, {len(context_chunks)} context chunks (top similarity: {similarity_score:.3f}, source_mode: {source_mode})")
-        answer = _call_llm(client, messages)
+        answer = _call_llm(messages)
         
         if not answer.strip():
             raise ValueError("LLM returned empty response")
