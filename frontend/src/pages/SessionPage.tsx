@@ -11,9 +11,12 @@ import {
   getAllPlans,
   getSessionHistory,
   updatePlanItemStatus,
+  getUserSubjects,
+  getSubjectTopics,
+  getStoredExplanations,
 } from '../api/client';
 
-import type { StudyPlanOut, StudySessionOut } from '../api/types';
+import type { StudyPlanOut, StudySessionOut, UserSubject, SubjectTopic, StoredExplanation } from '../api/types';
 
 // ── Explanation renderer ─────────────────────────────────────────────────────
 const ExplanationContent: React.FC<{ text: string }> = ({ text }) => {
@@ -66,7 +69,16 @@ export const SessionPage: React.FC = () => {
   const [plansLoading, setPlansLoading] = useState(true);
   const [plansError, setPlansError] = useState('');
   const [selectedPlanId, setSelectedPlanId] = useState<number | undefined>();
-  const [selectedPlanItemId, setSelectedPlanItemId] = useState<number | undefined>();
+  const [selectedPlanItemId, setSelectedPlanItemId] = useState<number | null | undefined>();
+
+  // Subject-first navigation state
+  const [allSubjects, setAllSubjects] = useState<UserSubject[]>([]);
+  const [selectedSubject, setSelectedSubject] = useState<UserSubject | null>(null);
+  const [subjectTopics, setSubjectTopics] = useState<SubjectTopic[]>([]);
+  const [loadingSubjects, setLoadingSubjects] = useState(false);
+  const [loadingSubjectTopics, setLoadingSubjectTopics] = useState(false);
+  const [subjectsError, setSubjectsError] = useState<string | null>(null);
+  const [selectedTopic, setSelectedTopic] = useState<SubjectTopic | null>(null);
 
   // Topic explanation
   const [explanationMode, setExplanationMode] = useState<'child' | 'average' | 'topper'>('average');
@@ -83,14 +95,37 @@ export const SessionPage: React.FC = () => {
   // Marking done / updating
   const [markingDone, setMarkingDone] = useState(false);
 
+  // View all explanations state
+  const [showAllExplanations, setShowAllExplanations] = useState(false);
+  const [allExplanations, setAllExplanations] = useState<StoredExplanation[]>([]);
+  const [loadingExplanations, setLoadingExplanations] = useState(false);
 
-  // ── Load plans on mount ────────────────────────────────────────────────────
+  const handleLoadAllExplanations = async () => {
+    setLoadingExplanations(true);
+    try {
+      const response = await getStoredExplanations();
+      setAllExplanations(response.explanations || []);
+      setShowAllExplanations(true);
+    } catch (err) {
+      console.error('Failed to load explanations:', err);
+    } finally {
+      setLoadingExplanations(false);
+    }
+  };
+
+
+  // ── Load subjects on mount ────────────────────────────────────────────────────
   useEffect(() => {
     setPlansLoading(true);
-    getAllPlans()
-      .then((items) => {
+    setLoadingSubjects(true);
+    Promise.all([
+      getAllPlans(),
+      getUserSubjects(),
+    ])
+      .then(([items, subjectsResponse]) => {
         setPlans(items);
-        
+        setAllSubjects(subjectsResponse.subjects || []);
+
         // Prioritize active plan from user state
         const activePlan = userState?.active_plan || items[0];
         if (activePlan) {
@@ -103,13 +138,41 @@ export const SessionPage: React.FC = () => {
           }
         }
         setPlansError('');
+        setSubjectsError(null);
       })
       .catch((err) => {
         console.error('Failed to load study plans:', err);
         setPlansError('Study plans could not be loaded. Please refresh and try again.');
+        setSubjectsError('Failed to load subjects. Please try again.');
       })
-      .finally(() => setPlansLoading(false));
+      .finally(() => {
+        setPlansLoading(false);
+        setLoadingSubjects(false);
+      });
   }, [userState?.active_plan]);
+
+  const loadSubjectTopics = async (subjectId: number) => {
+    setLoadingSubjectTopics(true);
+    try {
+      const response = await getSubjectTopics(subjectId);
+      setSubjectTopics(response.topics || []);
+    } catch (err: any) {
+      console.error('Failed to load subject topics:', err);
+      setSubjectsError('Failed to load topics for this subject.');
+    } finally {
+      setLoadingSubjectTopics(false);
+    }
+  };
+
+  const handleOpenSubject = (subject: UserSubject) => {
+    setSelectedSubject(subject);
+    loadSubjectTopics(subject.id);
+  };
+
+  const handleBackToSubjects = () => {
+    setSelectedSubject(null);
+    setSubjectTopics([]);
+  };
 
   // ── Load session history ───────────────────────────────────────────────────
   useEffect(() => {
@@ -118,6 +181,43 @@ export const SessionPage: React.FC = () => {
       .catch(() => {});
   }, []);
 
+  // ── Load subjects on mount ────────────────────────────────────────────────────
+  useEffect(() => {
+    setPlansLoading(true);
+    setLoadingSubjects(true);
+    Promise.all([
+      getAllPlans(),
+      getUserSubjects(),
+    ])
+      .then(([items, subjectsResponse]) => {
+        setPlans(items);
+        setAllSubjects(subjectsResponse.subjects || []);
+
+        // Prioritize active plan from user state
+        const activePlan = userState?.active_plan || items[0];
+        if (activePlan) {
+          setSelectedPlanId(activePlan.id);
+          // Auto-select first pending item
+          const firstPending = activePlan.items.find((item) => item.status === 'pending') ?? activePlan.items[0];
+          if (firstPending) {
+            setSelectedPlanItemId(firstPending.id);
+            setDurationMinutes(firstPending.duration_minutes || 45);
+          }
+        }
+        setPlansError('');
+        setSubjectsError(null);
+      })
+      .catch((err) => {
+        console.error('Failed to load study plans:', err);
+        setPlansError('Study plans could not be loaded. Please refresh and try again.');
+        setSubjectsError('Failed to load subjects. Please try again.');
+      })
+      .finally(() => {
+        setPlansLoading(false);
+        setLoadingSubjects(false);
+      });
+  }, [userState?.active_plan]);
+
   // ── Derive selected plan and item ─────────────────────────────────────────
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
   const planItems = selectedPlan?.items || [];
@@ -125,15 +225,16 @@ export const SessionPage: React.FC = () => {
 
   // ── Generate topic explanation when item changes ───────────────────────────
   useEffect(() => {
-    if (!selectedItem?.topic_name) return;
+    const topicName = selectedTopic?.name || selectedItem?.topic_name;
+    if (!topicName) return;
     setExplanationLoading(true);
     setExplanation('');
     setExplanationError('');
-    explainTopic({ topic_name: selectedItem.topic_name, mode: explanationMode })
+    explainTopic({ topic_name: topicName, mode: explanationMode })
       .then((res) => setExplanation(res.explanation))
       .catch(() => setExplanationError('Could not generate explanation. The AI may be busy — try again.'))
       .finally(() => setExplanationLoading(false));
-  }, [selectedItem?.id, explanationMode]);
+  }, [selectedTopic?.id, selectedItem?.id, explanationMode]);
 
   // ── Session actions ────────────────────────────────────────────────────────
   const handleStart = async () => {
@@ -142,7 +243,8 @@ export const SessionPage: React.FC = () => {
         await document.documentElement.requestFullscreen().catch(() => undefined);
       }
       await startSession({
-        plan_item_id: selectedPlanItemId,
+        plan_item_id: selectedPlanItemId || null, // Allow null for topics not in plan
+        subtopic: selectedTopic?.name || selectedItem?.topic_name || undefined, // Use topic name if no plan item
         explanation_mode: explanationMode,
         duration_minutes: durationMinutes,
       });
@@ -357,7 +459,7 @@ export const SessionPage: React.FC = () => {
 
         {/* ── LEFT: Topic Explanation panel ─────────────────────────────── */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Topic selector */}
+          {/* Subject-first topic selector */}
           {!session && (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
               <h2 className="text-base font-bold text-slate-900">Today's Study Plan</h2>
@@ -379,124 +481,215 @@ export const SessionPage: React.FC = () => {
                 </div>
               )}
 
-              {plans.length > 0 && (
+              {plans.length > 0 && !selectedSubject && (
                 <>
-                  <div className="space-y-4">
-                    <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                      Select Plan
-                    </label>
-                    <select
-                      value={selectedPlanId ?? ''}
-                      onChange={(e) => {
-                        const id = Number(e.target.value);
-                        const plan = plans.find((p) => p.id === id);
-                        setSelectedPlanId(id);
-                        const firstPending = plan?.items.find((item) => item.status === 'pending') ?? plan?.items[0];
-                        setSelectedPlanItemId(firstPending?.id);
-                        setDurationMinutes(firstPending?.duration_minutes || 45);
-                      }}
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm"
-                    >
-                      {plans.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          Plan #{p.id} · {new Date(p.generated_at).toLocaleDateString()} · {p.items.length} topics
-                        </option>
+                  {/* Subjects View - Level 1 */}
+                  {loadingSubjects ? (
+                    <div className="p-12 text-center text-slate-500">
+                      <div className="animate-spin rounded-full h-8 w-8 border-2 border-slate-300 border-t-indigo-600 mx-auto mb-3"></div>
+                      <p className="text-sm font-medium">Loading your subjects...</p>
+                    </div>
+                  ) : subjectsError ? (
+                    <div className="p-12 text-center">
+                      <p className="text-sm text-red-600 font-medium mb-3">{subjectsError}</p>
+                    </div>
+                  ) : allSubjects.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {allSubjects.map((subject) => (
+                        <div
+                          key={subject.id}
+                          className="rounded-xl border border-slate-200 p-5 hover:shadow-md transition-all cursor-pointer bg-white"
+                          onClick={() => handleOpenSubject(subject)}
+                        >
+                          <h3 className="text-lg font-bold text-slate-900 mb-3">{subject.name}</h3>
+                          <div className="space-y-2 mb-4">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500">Total Topics:</span>
+                              <span className="font-semibold text-slate-900">{subject.total_topics}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500">Completed:</span>
+                              <span className="font-semibold text-emerald-600">{subject.completed_topics}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500">In Progress:</span>
+                              <span className="font-semibold text-amber-600">{subject.in_progress_topics}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500">Planned:</span>
+                              <span className="font-semibold text-slate-700">{subject.planned_topics}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between pt-3 border-t border-slate-200">
+                            <div className="flex items-center gap-2">
+                              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                  className="h-2 bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full transition-all"
+                                  style={{ width: `${subject.progress_percentage}%` }}
+                                />
+                              </div>
+                              <span className="text-xs font-bold text-slate-900">{subject.progress_percentage}%</span>
+                            </div>
+                            <span className="text-xs font-semibold text-indigo-600">Open →</span>
+                          </div>
+                        </div>
                       ))}
-                    </select>
+                    </div>
+                  ) : (
+                    <div className="p-12 text-center text-slate-500">
+                      <p className="text-sm font-semibold">No subjects found</p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {selectedSubject && (
+                <>
+                  {/* Subject Topics View - Level 2 */}
+                  <div className="flex items-center gap-3 mb-4">
+                    <button
+                      onClick={handleBackToSubjects}
+                      className="p-2 rounded-lg hover:bg-slate-200 transition-all text-slate-600"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900">{selectedSubject.name}</h3>
+                      <p className="text-xs text-slate-500">{subjectTopics.length} topics</p>
+                    </div>
                   </div>
 
-                  {planItems.length > 0 && (
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                          Session Roadmap
-                        </label>
-                        <span className="text-[10px] font-bold text-indigo-500">{doneItems}/{totalItems} Complete</span>
-                      </div>
-                      <div className="space-y-2">
-                        {planItems.map((item) => {
-                          const isActive = selectedPlanItemId === item.id;
-                          const isDone = item.status === 'done';
+                  {loadingSubjectTopics ? (
+                    <div className="p-12 text-center text-slate-500">
+                      <div className="animate-spin rounded-full h-8 w-8 border-2 border-slate-300 border-t-indigo-600 mx-auto mb-3"></div>
+                      <p className="text-sm font-medium">Loading topics...</p>
+                    </div>
+                  ) : subjectTopics.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {subjectTopics.map((topic) => {
+                        const isInProgress = topic.status === 'in_progress';
+                        const isDone = topic.status === 'done';
+                        const isPlanned = topic.status === 'pending';
+                        const isSelected = selectedTopic?.id === topic.id || selectedPlanItemId === topic.item_id;
 
-                          return (
-                            <button
-                              key={item.id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedPlanItemId(item.id);
-                                setDurationMinutes(item.duration_minutes || 45);
-                              }}
-                              className={`flex w-full items-center justify-between rounded-xl border px-3.5 py-3 text-left transition-all ${
-                                isActive
-                                  ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20 shadow-sm'
-                                  : isDone
-                                    ? 'border-slate-200 bg-slate-50 opacity-60'
-                                    : 'border-slate-200 bg-white hover:border-indigo-200'
-                              }`}
-                            >
-                              <div className="flex items-center gap-3">
-                                <span className={`w-2 h-2 rounded-full ${
-                                  isDone ? 'bg-emerald-500' : isActive ? 'bg-indigo-500 animate-pulse' : 'bg-slate-300'
-                                }`} />
-                                <span className={`text-sm font-bold ${isActive ? 'text-indigo-900' : isDone ? 'text-slate-500' : 'text-slate-800'}`}>
-                                  {item.topic_name}
-                                </span>
+                        return (
+                          <div
+                            key={topic.id}
+                            className={`rounded-xl border p-5 transition-all hover:shadow-md cursor-pointer ${
+                              isSelected
+                                ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20 shadow-sm'
+                                : isInProgress
+                                ? 'bg-amber-50 border-amber-300'
+                                : isDone
+                                ? 'bg-emerald-50 border-emerald-300'
+                                : 'bg-white border-slate-200'
+                            }`}
+                            onClick={() => {
+                              setSelectedTopic(topic);
+                              if (topic.item_id) {
+                                setSelectedPlanItemId(topic.item_id);
+                                // Find the plan item to get the correct duration
+                                const planItem = planItems.find(p => p.topic_id === topic.id);
+                                setDurationMinutes(planItem?.duration_minutes || (topic.estimated_hours * 60) || 45);
+                              } else {
+                                setSelectedPlanItemId(null);
+                                setDurationMinutes(topic.estimated_hours * 60 || 45);
+                              }
+                            }}
+                          >
+                            <h3 className={`text-base font-bold mb-3 ${isDone ? 'line-through text-slate-500' : 'text-slate-900'}`}>
+                              {topic.name}
+                            </h3>
+
+                            <div className="space-y-2 mb-4">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500">Status:</span>
+                                {isInProgress && (
+                                  <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide rounded-md bg-amber-100 text-amber-800 border border-amber-200">
+                                    IN PROGRESS
+                                  </span>
+                                )}
+                                {isPlanned && (
+                                  <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-md bg-slate-100 text-slate-600 border border-slate-200">
+                                    PLANNED
+                                  </span>
+                                )}
+                                {isDone && (
+                                  <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                    COMPLETED
+                                  </span>
+                                )}
                               </div>
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                                isDone
-                                  ? 'bg-emerald-100 text-emerald-700'
-                                  : isActive
-                                    ? 'bg-indigo-100 text-indigo-700'
-                                    : 'bg-slate-100 text-slate-500'
-                              }`}>
-                                {isDone ? '✓' : isActive ? 'Active' : 'Pending'}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
+
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500">Difficulty:</span>
+                                <span className="text-xs font-medium capitalize text-slate-900">{topic.difficulty}</span>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500">Duration:</span>
+                                <span className="text-xs font-medium text-slate-900">{topic.estimated_hours}h</span>
+                              </div>
+                            </div>
+
+                            {isSelected && (
+                              <div className="pt-3 border-t border-slate-200/50">
+                                <span className="text-xs font-bold text-indigo-600">Selected for session</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-12 text-center text-slate-500">
+                      <p className="text-sm font-semibold">No topics found in this subject</p>
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">
-                        Explanation Level
-                      </label>
-                      <select
-                        value={explanationMode}
-                        onChange={(e) => setExplanationMode(e.target.value as typeof explanationMode)}
-                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm"
-                      >
-                        <option value="child">Child — Simple</option>
-                        <option value="average">Average — Standard</option>
-                        <option value="topper">Topper — Advanced</option>
-                      </select>
+                  {selectedItem && (
+                    <div className="grid grid-cols-2 gap-4 mt-6 pt-6 border-t border-slate-200">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">
+                          Explanation Level
+                        </label>
+                        <select
+                          value={explanationMode}
+                          onChange={(e) => setExplanationMode(e.target.value as typeof explanationMode)}
+                          className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm"
+                        >
+                          <option value="child">Child — Simple</option>
+                          <option value="average">Average — Standard</option>
+                          <option value="topper">Topper — Advanced</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">
+                          Timer (minutes)
+                        </label>
+                        <input
+                          type="number" min="10" max="240" step="5"
+                          value={durationMinutes}
+                          onChange={(e) => setDurationMinutes(Math.max(10, Math.min(240, Number(e.target.value) || 10)))}
+                          className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">
-                        Timer (minutes)
-                      </label>
-                      <input
-                        type="number" min="10" max="240" step="5"
-                        value={durationMinutes}
-                        onChange={(e) => setDurationMinutes(Math.max(10, Math.min(240, Number(e.target.value) || 10)))}
-                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm"
-                      />
-                    </div>
-                  </div>
+                  )}
                 </>
               )}
             </div>
           )}
 
-          {/* Topic Explanation */}
-          {selectedItem && (
+          {/* Topic Explanation - Only show when session is active */}
+          {isSessionActive && (selectedTopic || selectedItem) && (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-slate-50 flex items-center justify-between">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Topic Explanation</p>
-                  <h2 className="text-lg font-extrabold text-slate-900 mt-0.5">{selectedItem.topic_name}</h2>
+                  <h2 className="text-lg font-extrabold text-slate-900 mt-0.5">{selectedTopic?.name || selectedItem?.topic_name}</h2>
                 </div>
                 <span className="text-xs text-slate-500 font-semibold capitalize">{explanationMode} level</span>
               </div>
@@ -542,6 +735,58 @@ export const SessionPage: React.FC = () => {
               </div>
             </div>
           )}
+
+          {/* All Stored Explanations Modal */}
+          {showAllExplanations && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-slate-50 flex items-center justify-between">
+                <div>
+                  <h2 className="font-bold text-slate-900">All Stored Explanations</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">View all your previously generated topic explanations</p>
+                </div>
+                <button
+                  onClick={() => setShowAllExplanations(false)}
+                  className="p-2 rounded-lg hover:bg-slate-200 transition-all text-slate-600"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-6 max-h-96 overflow-y-auto">
+                {loadingExplanations ? (
+                  <div className="flex items-center gap-3 py-4">
+                    <div className="w-5 h-5 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" />
+                    <span className="text-sm text-indigo-600">Loading explanations...</span>
+                  </div>
+                ) : allExplanations.length > 0 ? (
+                  <div className="space-y-4">
+                    {allExplanations.map((exp, idx) => (
+                      <div key={idx} className="border border-slate-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className="font-bold text-slate-900">{exp.topic_name}</h3>
+                          <span className="text-xs font-semibold bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full capitalize">
+                            {exp.explanation_mode}
+                          </span>
+                        </div>
+                        <div className="text-sm text-slate-700 whitespace-pre-wrap max-h-40 overflow-y-auto bg-slate-50 p-3 rounded-lg">
+                          {exp.content}
+                        </div>
+                        <p className="text-xs text-slate-400 mt-2">
+                          Generated: {new Date(exp.generated_at).toLocaleString()}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-slate-500">
+                    <p className="text-sm font-semibold">No stored explanations found</p>
+                    <p className="text-xs mt-1">Start a focus session to generate and store explanations</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── RIGHT: Focus console ───────────────────────────────────────── */}
@@ -584,11 +829,11 @@ export const SessionPage: React.FC = () => {
             </div>
 
             {/* Before session */}
-            {!session && selectedItem && (
+            {!session && (selectedTopic || selectedItem) && (
               <div className="space-y-4">
                 <div className="rounded-xl bg-indigo-50 border border-indigo-100 px-4 py-3 text-left">
                   <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-500 mb-1">Session Topic</p>
-                  <p className="text-sm font-bold text-slate-800">{selectedItem.topic_name}</p>
+                  <p className="text-sm font-bold text-slate-800">{selectedTopic?.name || selectedItem?.topic_name}</p>
                   <p className="text-xs text-slate-500 mt-0.5">{durationMinutes} minutes planned</p>
                 </div>
                 <button
@@ -602,7 +847,14 @@ export const SessionPage: React.FC = () => {
                   </svg>
                   Start Focus Session
                 </button>
-                {selectedItem.status !== 'done' && (
+                <button
+                  onClick={handleLoadAllExplanations}
+                  disabled={loadingExplanations}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs border border-slate-200 transition-all"
+                >
+                  {loadingExplanations ? 'Loading...' : '📚 View All Stored Explanations'}
+                </button>
+                {selectedItem && selectedItem.status !== 'done' && (
                   <button
                     onClick={handleMarkDone}
                     disabled={markingDone}
@@ -668,10 +920,12 @@ export const SessionPage: React.FC = () => {
                       {markingDone ? 'Saving...' : '✓ Mark Topic as Done'}
                     </button>
                   )}
-                  <button onClick={() => navigate('/quiz')}
-                    className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs transition-all">
-                    Take Quiz on This Topic →
-                  </button>
+                  {(selectedTopic || selectedItem) && (
+                    <button onClick={() => navigate('/quiz')}
+                      className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs transition-all">
+                      Take Quiz on This Topic →
+                    </button>
+                  )}
                   <button onClick={() => window.location.reload()}
                     className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-all">
                     Start New Session

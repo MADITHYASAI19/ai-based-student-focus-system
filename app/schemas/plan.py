@@ -34,6 +34,7 @@ class StudyPlanCreate(BaseModel):
 
     exam_deadline: datetime
     items: list[PlanItemCreate] = Field(default_factory=list)
+    subject_name: str | None = None  # Optional subject name for organizing topics
 
 
 class StudyPlanOut(BaseModel):
@@ -62,6 +63,7 @@ class TopicConcept(BaseModel):
 
 class TopicBreakdownResponse(BaseModel):
     topics: list[TopicConcept]
+    subject_name: str | None = None
 
 
 class ItemStatusUpdate(BaseModel):

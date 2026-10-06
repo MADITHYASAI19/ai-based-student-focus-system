@@ -87,6 +87,7 @@ export interface PlanItemCreate {
 export interface StudyPlanCreate {
   exam_deadline: string;
   items?: PlanItemCreate[];
+  subject_name?: string;
 }
 
 export interface PlanItemOut {
@@ -252,6 +253,7 @@ export interface UserTopic {
   id: number;
   name: string;
   subject: string;
+  subject_id: number;
   difficulty: string;
   estimated_hours: number;
   in_plan: boolean;
@@ -262,6 +264,35 @@ export interface UserTopic {
 
 export interface UserTopicsResponse {
   topics: UserTopic[];
+}
+
+export interface UserSubject {
+  id: number;
+  name: string;
+  total_topics: number;
+  completed_topics: number;
+  in_progress_topics: number;
+  planned_topics: number;
+  progress_percentage: number;
+}
+
+export interface UserSubjectsResponse {
+  subjects: UserSubject[];
+}
+
+export interface SubjectTopic {
+  id: number;
+  name: string;
+  subject_id: number;
+  difficulty: string;
+  estimated_hours: number;
+  status: string | null;
+  plan_id: number | null;
+  item_id: number | null;
+}
+
+export interface SubjectTopicsResponse {
+  topics: SubjectTopic[];
 }
 
 
@@ -298,6 +329,7 @@ export interface TopicConcept {
 
 export interface TopicBreakdownResponse {
   topics: TopicConcept[];
+  subject_name?: string;
 }
 
 export interface ItemStatusUpdate {
@@ -320,4 +352,16 @@ export interface UserCurrentState {
   current_session_id: number | null;
   active_plan: StudyPlanOut | null;
   current_session: StudySessionOut | null;
+}
+
+export interface StoredExplanation {
+  topic_id: number;
+  topic_name: string;
+  explanation_mode: string;
+  content: string;
+  generated_at: string;
+}
+
+export interface StoredExplanationsResponse {
+  explanations: StoredExplanation[];
 }

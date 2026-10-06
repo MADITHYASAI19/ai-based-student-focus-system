@@ -233,6 +233,26 @@ class FocusMetric(Base):
     session: Mapped["StudySession"] = relationship("StudySession", backref="focus_metrics")
 
 
+class TopicContent(Base):
+    __tablename__ = "topic_content"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    topic_id: Mapped[int] = mapped_column(Integer, ForeignKey("topics.id"), nullable=False, index=True)
+    student_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    explanation_mode: Mapped[str] = mapped_column(String, nullable=False)  # child/average/topper
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    topic: Mapped["Topic"] = relationship("Topic")
+    student: Mapped["User"] = relationship("User")
+
+    # Unique constraint: one content per (topic, student, mode)
+    __table_args__ = (
+        {"sqlite_autoincrement": True},
+    )
+
+
 class QuizAttempt(Base):
     __tablename__ = "quiz_attempts"
 

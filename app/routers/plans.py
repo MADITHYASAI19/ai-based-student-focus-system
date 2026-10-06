@@ -14,7 +14,7 @@ from app.schemas.plan import (
     TopicExplainResponse,
     PlanItemOut,
 )
-from app.services.plan_service import create_plan, get_plan, update_item_status, finalize_plan, get_active_plan, get_user_current_state, get_user_topics
+from app.services.plan_service import create_plan, get_plan, update_item_status, finalize_plan, get_active_plan, get_user_current_state, get_user_topics, get_user_subjects, get_topics_for_subject
 from ai_service.generation.topic_explainer import generate_topic_explanation
 from ai_service.generation.pipeline import TopicPipeline
 import logging
@@ -40,7 +40,9 @@ def breakdown_topics(
             {"topic_name": t.name, "duration_minutes": 60} # Defaulting to 60 as subtopics are now priority
             for t in validated_plan.topics
         ]
-        return TopicBreakdownResponse(topics=topics)
+        # Include subject name in response
+        response = TopicBreakdownResponse(topics=topics, subject_name=validated_plan.subject)
+        return response
     except HTTPException:
         raise
     except Exception as exc:
@@ -52,12 +54,49 @@ def breakdown_topics(
 def explain_topic(
     request: TopicExplainRequest,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """Generate a detailed explanation of a topic for the authenticated student."""
+    """Generate a detailed explanation of a topic for the authenticated student.
+    
+    Checks for existing stored content first to avoid redundant AI calls.
+    """
     try:
+        # Check if topic exists in database
+        from app.models.models import Topic, TopicContent
+        from sqlalchemy.orm import joinedload
+        
+        topic = db.query(Topic).filter(Topic.name == request.topic_name).first()
+        
+        # If topic exists, check for stored content
+        if topic:
+            existing_content = db.query(TopicContent).filter(
+                TopicContent.topic_id == topic.id,
+                TopicContent.student_id == current_user.id,
+                TopicContent.explanation_mode == request.mode
+            ).first()
+            
+            if existing_content:
+                logger.info(f"Returning stored content for topic {topic.id}, mode {request.mode}")
+                return TopicExplainResponse(topic_name=request.topic_name, explanation=existing_content.content)
+        
+        # Generate new explanation
         explanation = generate_topic_explanation(request.topic_name, request.mode)
+        
+        # Store the content if topic exists
+        if topic:
+            content = TopicContent(
+                topic_id=topic.id,
+                student_id=current_user.id,
+                explanation_mode=request.mode,
+                content=explanation,
+            )
+            db.add(content)
+            db.commit()
+            logger.info(f"Stored new content for topic {topic.id}, mode {request.mode}")
+        
         return TopicExplainResponse(topic_name=request.topic_name, explanation=explanation)
     except Exception as exc:
+        logger.error(f"Explanation error: {exc}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
@@ -88,6 +127,7 @@ def create_study_plan(
             student_id=current_user.id,
             exam_deadline=plan_data.exam_deadline,
             items=plan_data.items,
+            subject_name=plan_data.subject_name,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -156,6 +196,57 @@ def get_user_topics_endpoint(
     """Get all topics for the authenticated user, optionally filtered by search query."""
     topics = get_user_topics(db=db, student_id=current_user.id, search_query=search)
     return {"topics": topics}
+
+
+@router.get("/subjects", status_code=status.HTTP_200_OK)
+def get_user_subjects_endpoint(
+    search: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all subjects for the authenticated user with topic counts and progress."""
+    subjects = get_user_subjects(db=db, student_id=current_user.id, search_query=search)
+    return {"subjects": subjects}
+
+
+@router.get("/subjects/{subject_id}/topics", status_code=status.HTTP_200_OK)
+def get_subject_topics_endpoint(
+    subject_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all topics for a specific subject that the user has in their plans."""
+    topics = get_topics_for_subject(db=db, student_id=current_user.id, subject_id=subject_id)
+    return {"topics": topics}
+
+
+@router.get("/explanations/stored", status_code=status.HTTP_200_OK)
+def get_stored_explanations(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all stored topic explanations for the authenticated user."""
+    from app.models.models import TopicContent, Topic
+    from sqlalchemy.orm import joinedload
+
+    explanations = (
+        db.query(TopicContent)
+        .options(joinedload(TopicContent.topic))
+        .filter(TopicContent.student_id == current_user.id)
+        .all()
+    )
+
+    result = []
+    for content in explanations:
+        result.append({
+            "topic_id": content.topic_id,
+            "topic_name": content.topic.name if content.topic else "Unknown",
+            "explanation_mode": content.explanation_mode,
+            "content": content.content,
+            "generated_at": content.generated_at.isoformat(),
+        })
+
+    return {"explanations": result}
 
 
 @router.get("/{student_id}", response_model=StudyPlanOut)

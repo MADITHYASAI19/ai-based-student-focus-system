@@ -25,6 +25,8 @@ import type {
   AvailableTopic,
   TopicQuizStats,
   UserTopicsResponse,
+  UserSubjectsResponse,
+  SubjectTopicsResponse,
 } from './types';
 
 
@@ -257,6 +259,25 @@ export const getCurrentState = async () => {
 export const getUserTopics = async (search?: string): Promise<UserTopicsResponse> => {
   const params = search ? { search } : {};
   const response = await apiClient.get<UserTopicsResponse>('/api/plans/topics', { params });
+  return response.data;
+};
+
+// Get user subjects
+export const getUserSubjects = async (search?: string): Promise<UserSubjectsResponse> => {
+  const params = search ? { search } : {};
+  const response = await apiClient.get<UserSubjectsResponse>('/api/plans/subjects', { params });
+  return response.data;
+};
+
+// Get topics for a specific subject
+export const getSubjectTopics = async (subjectId: number): Promise<SubjectTopicsResponse> => {
+  const response = await apiClient.get<SubjectTopicsResponse>(`/api/plans/subjects/${subjectId}/topics`);
+  return response.data;
+};
+
+// Get all stored topic explanations
+export const getStoredExplanations = async () => {
+  const response = await apiClient.get('/api/plans/explanations/stored');
   return response.data;
 };
 

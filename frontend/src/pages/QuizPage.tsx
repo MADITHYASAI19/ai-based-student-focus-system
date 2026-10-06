@@ -7,6 +7,7 @@ import {
   getQuizHistory,
   getTopicQuizStats,
   recordFaceTrackingEvent,
+  uploadTopicDocument,
 } from '../api/client';
 import { useFaceDetection } from '../hooks/useFaceDetection';
 import { usePhoneDetection } from '../hooks/usePhoneDetection';
@@ -21,6 +22,7 @@ import type {
   QuizSubmission,
   DifficultyLevel,
   QuestionType,
+  StudyDocument,
 } from '../api/types';
 
 export const QuizPage: React.FC = () => {
@@ -36,6 +38,11 @@ export const QuizPage: React.FC = () => {
   const [fullscreenRequired, setFullscreenRequired] = useState(false);
   const [pdfSourceMode, setPdfSourceMode] = useState<'topic_knowledge' | 'pdf_only' | 'topic_pdf'>('topic_knowledge');
   const [faceTrackingEnabled, setFaceTrackingEnabled] = useState(true);
+  
+  // PDF upload state
+  const [uploadedPdf, setUploadedPdf] = useState<File | null>(null);
+  const [uploadingPdf, setUploadingPdf] = useState(false);
+  const [uploadedDocument, setUploadedDocument] = useState<StudyDocument | null>(null);
   
   // Quiz state
   const [quiz, setQuiz] = useState<QuizOut | null>(null);
@@ -95,6 +102,28 @@ export const QuizPage: React.FC = () => {
       faceEventBufferRef.current.push({ eventType, ts: Date.now() });
     }
   }, []);
+
+  // Handle PDF upload
+  const handlePdfUpload = async (file: File) => {
+    if (!selectedTopic) {
+      setError('Please select a topic first before uploading a PDF');
+      return;
+    }
+    
+    setUploadingPdf(true);
+    setError(null);
+    
+    try {
+      const document = await uploadTopicDocument(selectedTopic.id, file);
+      setUploadedDocument(document);
+      setUploadedPdf(file);
+    } catch (err: any) {
+      console.error('PDF upload failed:', err);
+      setError(err.response?.data?.detail || 'Failed to upload PDF. Please try again.');
+    } finally {
+      setUploadingPdf(false);
+    }
+  };
 
   // Detect new proctoring events and buffer them
   useEffect(() => {
@@ -609,26 +638,49 @@ export const QuizPage: React.FC = () => {
                 No topics available. Add topics to your study plan first.
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {availableTopics.map((topic) => {
-                  const isSelected = selectedTopic?.id === topic.id;
-                  return (
-                    <button
-                      key={topic.id}
-                      type="button"
-                      onClick={() => setSelectedTopic(topic)}
-                      className={`p-4 rounded-xl text-left border transition-all cursor-pointer ${
-                        isSelected
-                          ? 'bg-indigo-50/90 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
-                          : 'bg-white border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <p className="text-xs font-semibold text-indigo-600">{topic.subject_name}</p>
-                      <p className="text-sm font-bold text-slate-900 mt-0.5">{topic.name}</p>
-                      <p className="text-xs text-slate-500 mt-1 capitalize">{topic.difficulty}</p>
-                    </button>
-                  );
-                })}
+              <div className="space-y-4">
+                {(() => {
+                  // Group topics by subject
+                  const topicsBySubject = availableTopics.reduce((acc, topic) => {
+                    const subject = topic.subject_name || 'Uncategorized';
+                    if (!acc[subject]) {
+                      acc[subject] = [];
+                    }
+                    acc[subject].push(topic);
+                    return acc;
+                  }, {} as Record<string, AvailableTopic[]>);
+
+                  return Object.entries(topicsBySubject).map(([subjectName, topics]) => (
+                    <div key={subjectName} className="space-y-2">
+                      {/* Subject Header */}
+                      <div className="flex items-center gap-2 pb-1 border-b border-slate-200">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{subjectName}</span>
+                        <span className="text-[10px] text-slate-400">({topics.length})</span>
+                      </div>
+                      {/* Subject Topics */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {topics.map((topic) => {
+                          const isSelected = selectedTopic?.id === topic.id;
+                          return (
+                            <button
+                              key={topic.id}
+                              type="button"
+                              onClick={() => setSelectedTopic(topic)}
+                              className={`p-4 rounded-xl text-left border transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-indigo-50/90 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
+                                  : 'bg-white border-slate-200 hover:border-slate-300'
+                              }`}
+                            >
+                              <p className="text-sm font-bold text-slate-900">{topic.name}</p>
+                              <p className="text-xs text-slate-500 mt-1 capitalize">{topic.difficulty}</p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ));
+                })()}
               </div>
             )}
           </div>
@@ -925,6 +977,76 @@ export const QuizPage: React.FC = () => {
               </p>
             )}
           </div>
+
+          {/* PDF Upload Section */}
+          {(pdfSourceMode === 'pdf_only' || pdfSourceMode === 'topic_pdf') && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+                Upload Study PDF
+              </label>
+              <div className="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:border-indigo-400 transition-all">
+                {uploadedDocument ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-center gap-2 text-emerald-600">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="text-sm font-semibold">PDF Uploaded Successfully</span>
+                    </div>
+                    <p className="text-xs text-slate-600">{uploadedDocument.filename}</p>
+                    <p className="text-xs text-slate-500">
+                      Status: {uploadedDocument.status === 'completed' ? 'Processed' : uploadedDocument.status}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUploadedPdf(null);
+                        setUploadedDocument(null);
+                      }}
+                      className="text-xs text-red-600 font-semibold hover:text-red-700 underline"
+                    >
+                      Remove PDF
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <svg className="w-12 h-12 mx-auto text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <p className="text-sm text-slate-600">
+                      Upload a PDF to use as the source for quiz questions
+                    </p>
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          handlePdfUpload(file);
+                        }
+                      }}
+                      disabled={uploadingPdf || !selectedTopic}
+                      className="hidden"
+                      id="pdf-upload"
+                    />
+                    <label
+                      htmlFor="pdf-upload"
+                      className={`inline-block px-4 py-2 text-xs font-semibold rounded-lg cursor-pointer transition-all ${
+                        uploadingPdf || !selectedTopic
+                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                          : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                      }`}
+                    >
+                      {uploadingPdf ? 'Uploading...' : 'Select PDF File'}
+                    </label>
+                    {!selectedTopic && (
+                      <p className="text-xs text-slate-400">Select a topic first to upload PDF</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           
           {/* Generate Button */}
           <div className="pt-4 border-t border-slate-100">

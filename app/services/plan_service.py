@@ -2,6 +2,7 @@ from datetime import datetime
 import unicodedata
 
 from sqlalchemy.orm import Session
+from sqlalchemy import case
 
 from app.models.models import PlanItem, StudyPlan, Subject, Topic, User
 from app.schemas.plan import PlanItemCreate
@@ -29,8 +30,17 @@ def create_plan(
     student_id: int,
     exam_deadline: datetime,
     items: list[PlanItemCreate],
+    subject_name: str | None = None,
 ) -> StudyPlan:
-    """Create a study plan and its items atomically for one student."""
+    """Create a study plan and its items atomically for one student.
+    
+    Args:
+        db: Database session
+        student_id: User ID
+        exam_deadline: Plan deadline
+        items: List of plan items (topics)
+        subject_name: Optional subject name (if not provided, uses "My Topics")
+    """
     db_plan = StudyPlan(
         student_id=student_id,
         exam_deadline=exam_deadline,
@@ -39,10 +49,14 @@ def create_plan(
     db.add(db_plan)
     db.flush()
 
-    personal_subject = db.query(Subject).filter(Subject.name == "My Topics").first()
-    if not personal_subject:
-        personal_subject = Subject(name="My Topics")
-        db.add(personal_subject)
+    # Use provided subject name or default to "My Topics"
+    subject_name = subject_name or "My Topics"
+    
+    # Get or create the subject
+    subject = db.query(Subject).filter(Subject.name == subject_name).first()
+    if not subject:
+        subject = Subject(name=subject_name)
+        db.add(subject)
         db.flush()
 
     for item in items:
@@ -51,37 +65,31 @@ def create_plan(
             # Use normalized name for duplicate detection
             normalized_name = normalize_topic_name(item.topic_name.strip())
             
-            # Check for existing topic with normalized name comparison
-            topic = (
+            # Check for existing topic in this subject with normalized name comparison
+            existing_topics = (
                 db.query(Topic)
-                .filter(Topic.subject_id == personal_subject.id)
-                .first()
+                .filter(Topic.subject_id == subject.id)
+                .all()
             )
+            matching_topic = None
+            for existing in existing_topics:
+                if normalize_topic_name(existing.name) == normalized_name:
+                    matching_topic = existing
+                    break
             
-            # Find if any existing topic matches (case-insensitive, whitespace-insensitive)
-            if topic:
-                existing_topics = (
-                    db.query(Topic)
-                    .filter(Topic.subject_id == personal_subject.id)
-                    .all()
-                )
-                matching_topic = None
-                for existing in existing_topics:
-                    if normalize_topic_name(existing.name) == normalized_name:
-                        matching_topic = existing
-                        break
-                topic = matching_topic
-            
-            if not topic:
+            if not matching_topic:
                 topic = Topic(
-                    subject_id=personal_subject.id,
+                    subject_id=subject.id,
                     name=item.topic_name.strip(),
                     difficulty="medium",
                     estimated_hours=max(1, round(item.duration_minutes / 60)),
                 )
                 db.add(topic)
                 db.flush()
-            topic_id = topic.id
+                topic_id = topic.id
+            else:
+                topic_id = matching_topic.id
+                
         if topic_id is None:
             raise ValueError("Each plan item needs a topic name")
         db.add(
@@ -233,52 +241,190 @@ def get_user_topics(db: Session, student_id: int, search_query: str | None = Non
     """
     from sqlalchemy.orm import joinedload
     
-    # Get all topics from "My Topics" subject (personal topics)
-    personal_subject = db.query(Subject).filter(Subject.name == "My Topics").first()
-    
-    if not personal_subject:
-        return []
-    
-    # Get all topics from personal subject
-    query = db.query(Topic).filter(Topic.subject_id == personal_subject.id)
+    # Get all topics from all subjects that the user has in their plans
+    # Join through plan_items → study_plans → topics → subjects
+    query = (
+        db.query(Topic, Subject)
+        .join(PlanItem, PlanItem.topic_id == Topic.id)
+        .join(StudyPlan, StudyPlan.id == PlanItem.plan_id)
+        .join(Subject, Subject.id == Topic.subject_id)
+        .filter(StudyPlan.student_id == student_id)
+        .distinct()
+    )
     
     # Apply search filter if provided
     if search_query and search_query.strip():
         search_normalized = normalize_topic_name(search_query)
         # Filter topics where normalized name contains search query
-        topics = query.all()
+        all_results = query.all()
         filtered = []
-        for topic in topics:
+        for topic, subject in all_results:
             if search_normalized in normalize_topic_name(topic.name):
-                filtered.append(topic)
-        topics = filtered
+                filtered.append((topic, subject))
+        results = filtered
     else:
-        topics = query.all()
+        results = query.all()
     
-    # Get topic status from plan items if they exist in any plan
+    # Get topic status from plan items
+    topic_status_map = {}
+    plan_items = (
+        db.query(PlanItem)
+        .join(StudyPlan)
+        .filter(StudyPlan.student_id == student_id)
+        .all()
+    )
+    for item in plan_items:
+        topic_status_map[item.topic_id] = {
+            "status": item.status,
+            "plan_id": item.plan_id,
+            "item_id": item.id,
+        }
+    
+    # Build result
     result = []
-    for topic in topics:
-        # Check if this topic is in any of the user's plans
-        plan_item = (
-            db.query(PlanItem)
-            .join(StudyPlan)
-            .filter(
-                PlanItem.topic_id == topic.id,
-                StudyPlan.student_id == student_id
-            )
-            .first()
-        )
-        
+    for topic, subject in results:
+        status_info = topic_status_map.get(topic.id, {})
         topic_dict = {
             "id": topic.id,
             "name": topic.name,
-            "subject": personal_subject.name,
+            "subject": subject.name,
+            "subject_id": subject.id,
             "difficulty": topic.difficulty,
             "estimated_hours": topic.estimated_hours,
-            "in_plan": plan_item is not None,
-            "status": plan_item.status if plan_item else None,
-            "plan_id": plan_item.plan_id if plan_item else None,
-            "item_id": plan_item.id if plan_item else None,
+            "in_plan": True,
+            "status": status_info.get("status"),
+            "plan_id": status_info.get("plan_id"),
+            "item_id": status_info.get("item_id"),
+        }
+        result.append(topic_dict)
+    
+    return result
+
+
+def get_user_subjects(db: Session, student_id: int, search_query: str | None = None) -> list[dict]:
+    """Get all subjects associated with a user with topic counts and progress.
+    
+    Args:
+        db: Database session
+        student_id: User ID
+        search_query: Optional search string to filter subjects by name
+    
+    Returns:
+        List of subject dictionaries with id, name, topic counts, and progress
+    """
+    from sqlalchemy import func
+    
+    # Get all subjects that the user has topics for (via their plans)
+    # Join through plan_items → study_plans → topics → subjects
+    query = (
+        db.query(
+            Subject.id,
+            Subject.name,
+            func.count(Topic.id).label('total_topics'),
+            func.sum(case((PlanItem.status == 'done', 1), else_=0)).label('completed_topics'),
+            func.sum(case((PlanItem.status == 'in_progress', 1), else_=0)).label('in_progress_topics'),
+            func.sum(case((PlanItem.status == 'pending', 1), else_=0)).label('planned_topics'),
+        )
+        .join(Topic, Topic.subject_id == Subject.id)
+        .join(PlanItem, PlanItem.topic_id == Topic.id)
+        .join(StudyPlan, StudyPlan.id == PlanItem.plan_id)
+        .filter(StudyPlan.student_id == student_id)
+        .group_by(Subject.id, Subject.name)
+        .distinct()
+    )
+    
+    # Apply search filter if provided
+    if search_query and search_query.strip():
+        search_normalized = normalize_topic_name(search_query)
+        # Filter subjects where normalized name contains search query
+        all_results = query.all()
+        filtered = []
+        for subject in all_results:
+            if search_normalized in normalize_topic_name(subject.name):
+                filtered.append(subject)
+        results = filtered
+    else:
+        results = query.all()
+    
+    # Build result
+    result = []
+    for subject in results:
+        total = subject.total_topics or 0
+        completed = subject.completed_topics or 0
+        in_progress = subject.in_progress_topics or 0
+        planned = subject.planned_topics or 0
+        progress = int((completed / total) * 100) if total > 0 else 0
+        
+        subject_dict = {
+            "id": subject.id,
+            "name": subject.name,
+            "total_topics": total,
+            "completed_topics": completed,
+            "in_progress_topics": in_progress,
+            "planned_topics": planned,
+            "progress_percentage": progress,
+        }
+        result.append(subject_dict)
+    
+    return result
+
+
+def get_topics_for_subject(db: Session, student_id: int, subject_id: int) -> list[dict]:
+    """Get all topics for a specific subject that the user has in their plans.
+    
+    Args:
+        db: Database session
+        student_id: User ID
+        subject_id: Subject ID
+    
+    Returns:
+        List of topic dictionaries with id, name, status, etc.
+    """
+    # Get all topics from the specific subject that are in the user's plans
+    query = (
+        db.query(Topic)
+        .join(PlanItem, PlanItem.topic_id == Topic.id)
+        .join(StudyPlan, StudyPlan.id == PlanItem.plan_id)
+        .filter(
+            StudyPlan.student_id == student_id,
+            Topic.subject_id == subject_id
+        )
+        .distinct()
+    )
+    
+    topics = query.all()
+    
+    # Get topic status from plan items
+    topic_status_map = {}
+    plan_items = (
+        db.query(PlanItem)
+        .join(StudyPlan)
+        .filter(
+            StudyPlan.student_id == student_id,
+            PlanItem.topic_id.in_([t.id for t in topics])
+        )
+        .all()
+    )
+    for item in plan_items:
+        topic_status_map[item.topic_id] = {
+            "status": item.status,
+            "plan_id": item.plan_id,
+            "item_id": item.id,
+        }
+    
+    # Build result
+    result = []
+    for topic in topics:
+        status_info = topic_status_map.get(topic.id, {})
+        topic_dict = {
+            "id": topic.id,
+            "name": topic.name,
+            "subject_id": topic.subject_id,
+            "difficulty": topic.difficulty,
+            "estimated_hours": topic.estimated_hours,
+            "status": status_info.get("status"),
+            "plan_id": status_info.get("plan_id"),
+            "item_id": status_info.get("item_id"),
         }
         result.append(topic_dict)
     
