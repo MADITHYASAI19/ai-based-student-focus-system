@@ -127,7 +127,9 @@ export const uploadFocusDocument = async (file: File): Promise<StudyDocument> =>
 export const uploadDoubtDocument = async (file: File): Promise<StudyDocument> => {
   const formData = new FormData();
   formData.append('file', file);
-  const response = await apiClient.post<StudyDocument>('/api/topics/doubts/documents', formData);
+  const response = await apiClient.post<StudyDocument>('/api/topics/doubts/documents', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
   return response.data;
 };
 

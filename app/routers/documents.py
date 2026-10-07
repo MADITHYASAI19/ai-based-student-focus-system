@@ -7,7 +7,7 @@ from app.core.database import get_db
 from app.deps import get_current_user
 from app.models.models import Topic, User
 from app.schemas.documents import ExplanationOut, ExplanationRequest, StudyDocumentOut, TopicEstimateOut
-from app.services.document_service import explain_document_subtopic, estimate_topic_from_upload, list_documents, upload_document, upload_focus_document, upload_doubt_document
+from app.services.document_service import explain_document_subtopic, estimate_topic_from_upload, list_documents, upload_document, upload_focus_document, upload_doubt_document as upload_doubt_document_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -58,6 +58,22 @@ def estimate_topic_plan(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="AI estimate failed") from exc
 
 
+@router.post("/doubts/documents", response_model=StudyDocumentOut, status_code=status.HTTP_201_CREATED)
+def upload_doubt_document(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Upload a standalone document for the Doubt Solver (not tied to a topic)."""
+    try:
+        return upload_doubt_document_service(db, current_user, file)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Doubt document upload failed")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Document processing failed") from exc
+
+
 @router.get("/{topic_id}/documents", response_model=list[StudyDocumentOut])
 def get_topic_documents(
     topic_id: int,
@@ -90,19 +106,3 @@ def upload_topic_document(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Document processing failed. Check the document status and try again.",
         ) from exc
-
-
-@router.post("/doubts/documents", response_model=StudyDocumentOut, status_code=status.HTTP_201_CREATED)
-def upload_doubt_document(
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Upload a standalone document for the Doubt Solver (not tied to a topic)."""
-    try:
-        return upload_doubt_document(db, current_user, file)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except Exception as exc:
-        logger.exception("Doubt document upload failed")
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Document processing failed") from exc

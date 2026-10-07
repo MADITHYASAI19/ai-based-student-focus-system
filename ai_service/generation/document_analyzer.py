@@ -36,7 +36,7 @@ Return ONLY valid JSON with this exact shape:
 Identify only concepts, topics, subtopics, and evidence actually supported by the supplied document. Do not invent a topic merely from its name. Estimate hours from the document scope and difficulty.
 
 DOCUMENT:
-{content[:120000]}"""
+{content[:12000]}"""
     raw = complete_json([
             {"role": "system", "content": "You are a precise academic curriculum analyst."},
             {"role": "user", "content": prompt},

@@ -1,0 +1,1 @@
+invalid type: string " manner including both\nparts.*/\nA[ start++ ] = Arr[ p ] ;\n}\n}\nMerge Sort Analysis\n• Let 𝑻(𝒏) be the time taken by this algorithm to sort an array of 𝑛\nelements.\n• Separating 𝑇 into 𝑈 & 𝑉 takes linear time; 𝑚𝑒𝑟𝑔𝑒(𝑈, 𝑉, 𝑇) also takes\nlinear time.\n𝑇(𝑛)=𝑇(𝑛/2)+ 𝑇(𝑛/2)+𝑔(𝑛) where 𝑔(𝑛)∈θ(𝑛).

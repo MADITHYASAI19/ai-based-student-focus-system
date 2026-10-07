@@ -1,0 +1,1 @@
+invalid type: string "�𝐱(𝒄[𝒊 − 𝟏, 𝒋], 𝒄[𝒊, 𝒋 − 𝟏])\nLongest Common Subsequence\n𝒚𝒋 𝑨 𝑩 𝑪 𝑩 𝑫 𝑨 𝑩\n𝒙𝒊 0 0 0 0 0 0 0 0\n𝑩 0 0 1 1 1 1 1 1\n𝑫 0 0 1 1 1 2 2 2\n𝑪 0 0 1 2 2 2 2 2\n𝑨 0 1 1 2 2 2 3 3\n𝑩 0 1 2 2 3 3 3 4\n𝑨 0 1 2 2 3 3 4 4\n+1250,750+7500+1875,2200+0+2500}\n•C[1,4]=4700\nExample\noin with denomination 4\n
