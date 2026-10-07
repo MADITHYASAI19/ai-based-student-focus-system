@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePlan } from '../hooks/usePlan';
+import { useNotifications } from '../contexts/NotificationContext';
 import { breakdownTopics, updatePlanItemStatus, finalizePlan, getUserSubjects, getSubjectTopics } from '../api/client';
 import type { StudyPlanCreate, TopicConcept, PlanItemOut, UserSubject, SubjectTopic } from '../api/types';
 
 export const PlannerPage: React.FC = () => {
   const { plan, loading, error, hasPlan, createPlan, refetch } = usePlan();
+  const { generateScheduleNotifications, celebrateCompletion } = useNotifications();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [examDeadline, setExamDeadline] = useState('');
   const [rawTopicsText, setRawTopicsText] = useState('');
@@ -34,6 +36,13 @@ export const PlannerPage: React.FC = () => {
   useEffect(() => {
     loadSubjects();
   }, []);
+
+  // Generate schedule notifications when plan changes
+  useEffect(() => {
+    if (plan && plan.is_active) {
+      generateScheduleNotifications(plan);
+    }
+  }, [plan, generateScheduleNotifications]);
 
   const loadSubjects = async () => {
     setLoadingSubjects(true);
@@ -75,13 +84,17 @@ export const PlannerPage: React.FC = () => {
   const handleMarkItemStatus = async (itemId: number, newStatus: 'pending' | 'in_progress' | 'done' | 'skipped') => {
     setMarkingItem(itemId);
     try {
-      await updatePlanItemStatus(itemId, newStatus);
+      const updatedItem = await updatePlanItemStatus(itemId, newStatus);
       await refetch();
       // Reload subjects to update progress
       await loadSubjects();
       // Reload subject topics if one is selected
       if (selectedSubject) {
         await loadSubjectTopics(selectedSubject.id);
+      }
+      // Trigger celebration if marked as done
+      if (newStatus === 'done' && updatedItem) {
+        celebrateCompletion(updatedItem.topic_name);
       }
     } catch {
       setDocumentMessage({ type: 'error', text: 'Failed to update topic status.' });
@@ -223,26 +236,25 @@ export const PlannerPage: React.FC = () => {
     : completedItems;
 
   return (
-    <div className="space-y-8">
-      {/* Top Header & Action */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200/80">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Study Planner
+    <div className="space-y-5">
+      {/* Hero Section */}
+      <div className="relative h-48 bg-gradient-to-r from-[#e8f1fc] to-[#fff1e4] rounded-2xl overflow-hidden">
+        <div className="absolute right-0 top-0 h-48 w-48 opacity-20 bg-gradient-to-l from-[#24425f] to-transparent" />
+        <div className="relative px-7 py-6">
+          <p className="text-[11.5px] tracking-[0.08em] font-semibold text-[#566478] uppercase">Study Planner</p>
+          <h1 className="text-4xl font-extrabold text-[#16253b] leading-tight mt-2 max-w-sm">
+            Your personalized learning roadmap
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Track planned, in-progress, and completed topics with automatic progress synchronization.
+          <p className="text-sm text-[#566478] mt-3 max-w-md">
+            Track subjects, topics, and progress with AI-powered study plans.
           </p>
+          <button
+            onClick={() => setShowCreateForm(!showCreateForm)}
+            className="absolute top-4 right-6 px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#1d3a5a] to-[#2e4a67] text-white font-semibold text-sm shadow-lg shadow-[#1d3a5a]/25 hover:shadow-xl transition-all cursor-pointer"
+          >
+            {hasPlan ? 'Add / Replace Plan' : 'Create Study Plan'}
+          </button>
         </div>
-        <button
-          onClick={() => setShowCreateForm(!showCreateForm)}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm shadow-md shadow-indigo-600/20 active:scale-95 transition-all cursor-pointer whitespace-nowrap"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-          </svg>
-          {hasPlan ? 'Add / Replace Plan' : 'Create Study Plan'}
-        </button>
       </div>
 
       {documentMessage && (
@@ -255,65 +267,63 @@ export const PlannerPage: React.FC = () => {
       {/* Overview Stats - Based on ALL subjects */}
       {(hasPlan || allSubjects.length > 0) && (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3.5">
-              <div className="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+            <div className="bg-gradient-to-br from-[#e4f0fd] to-white border border-transparent rounded-2xl p-5 flex items-center gap-3.5 shadow-sm">
+              <div className="w-15 h-15 flex items-center justify-center">
+                <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2324425f'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253'/%3E%3C/svg%3E" alt="" className="w-15 h-15" style={{ width: '60px', height: '60px' }} />
               </div>
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Total Topics</p>
-                <p className="text-xl font-extrabold text-slate-900">{totalTopicsCount}</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#566478]">Total Topics</p>
+                <p className="text-3xl font-extrabold text-[#16253b] mt-1">{totalTopicsCount}</p>
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3.5">
-              <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-                <span className="text-base font-black">◉</span>
+            <div className="bg-white border border-[#e6eaf0] rounded-2xl p-5 flex items-center gap-3.5 shadow-sm">
+              <div className="w-15 h-15 flex items-center justify-center">
+                <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23e0641c'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'/%3E%3C/svg%3E" alt="" className="w-10 h-10" style={{ width: '40px', height: '40px' }} />
               </div>
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">In Progress</p>
-                <p className="text-xl font-extrabold text-amber-600">{inProgressTopicsCount}</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#566478]">In Progress</p>
+                <p className="text-3xl font-extrabold text-[#e0641c] mt-1">{inProgressTopicsCount}</p>
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3.5">
-              <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-                <span className="text-base font-black">✓</span>
+            <div className="bg-white border border-[#e6eaf0] rounded-2xl p-5 flex items-center gap-3.5 shadow-sm">
+              <div className="w-15 h-15 flex items-center justify-center">
+                <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23138a5e'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'/%3E%3C/svg%3E" alt="" className="w-10 h-10" style={{ width: '40px', height: '40px' }} />
               </div>
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Completed</p>
-                <p className="text-xl font-extrabold text-emerald-600">{completedTopicsCount}</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#566478]">Completed</p>
+                <p className="text-3xl font-extrabold text-[#138a5e] mt-1">{completedTopicsCount}</p>
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3.5">
-              <div className="w-11 h-11 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center font-bold">
-                <span className="text-base font-black">○</span>
+            <div className="bg-white border border-[#e6eaf0] rounded-2xl p-5 flex items-center gap-3.5 shadow-sm">
+              <div className="w-15 h-15 flex items-center justify-center">
+                <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2324425f'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2'/%3E%3C/svg%3E" alt="" className="w-10 h-10" style={{ width: '40px', height: '40px' }} />
               </div>
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Planned</p>
-                <p className="text-xl font-extrabold text-slate-700">{plannedTopicsCount}</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#566478]">Planned</p>
+                <p className="text-3xl font-extrabold text-[#16253b] mt-1">{plannedTopicsCount}</p>
               </div>
             </div>
           </div>
 
           {/* Progress bar */}
           {hasPlan && (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-3">
+            <div className="bg-white rounded-2xl border border-[#e6eaf0] shadow-sm p-5 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-sm font-bold text-slate-800">Overall Study Plan Progress</span>
-                  <p className="text-xs text-slate-500 mt-0.5">
+                  <span className="text-sm font-bold text-[#16253b]">Overall Study Plan Progress</span>
+                  <p className="text-xs text-[#566478] mt-0.5">
                     {completedItems.length} of {items.length} topics finished · {totalDuration} total minutes
                   </p>
                 </div>
-                <span className="text-lg font-black text-indigo-600">{progressPct}%</span>
+                <span className="text-lg font-black text-[#24425f]">{progressPct}%</span>
               </div>
-              <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+              <div className="w-full h-1.5 bg-[#e6eaf0] rounded-full overflow-hidden">
                 <div
-                  className="h-3 bg-gradient-to-r from-indigo-500 via-amber-500 to-emerald-500 rounded-full transition-all duration-500"
+                  className="h-full bg-[#24425f] rounded-full transition-all duration-500"
                   style={{ width: `${progressPct}%` }}
                 />
               </div>
@@ -421,13 +431,13 @@ export const PlannerPage: React.FC = () => {
 
       {/* Subjects View - Level 1 */}
       {!selectedSubject && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        <div className="bg-white rounded-2xl border border-[#e6eaf0] shadow-sm overflow-hidden">
           {/* Header & Search */}
-          <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-col gap-3">
+          <div className="px-6 py-4 border-b border-[#e6eaf0] bg-[#f8fafc] flex flex-col gap-3">
             <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
               <div className="flex items-center gap-3">
-                <h2 className="font-extrabold text-slate-900 text-base">My Subjects</h2>
-                <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-xs font-bold">
+                <h2 className="font-extrabold text-[#16253b] text-base">My Subjects</h2>
+                <span className="px-2.5 py-0.5 rounded-full bg-[#e5f8ed] text-[#138a5e] text-xs font-bold">
                   {allSubjects.length} total
                 </span>
               </div>
@@ -437,47 +447,47 @@ export const PlannerPage: React.FC = () => {
                   placeholder="Search subjects..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 pr-4 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 w-48 sm:w-64"
+                  className="pl-9 pr-4 py-2 text-xs bg-white border border-[#e6eaf0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#24425f] w-48 sm:w-64"
                 />
-                <svg className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-[#8b96a8] absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
               </div>
             </div>
 
             {/* Subject Filter Tabs */}
-            <div className="flex items-center gap-1.5 bg-slate-200/60 p-1 rounded-xl text-xs font-bold self-start">
+            <div className="flex items-center gap-1.5 bg-[#eef2f6] p-1 rounded-xl text-xs font-bold self-start">
               <button
                 onClick={() => setSubjectFilterTab('all')}
-                className={`px-3 py-1.5 rounded-lg transition-all ${subjectFilterTab === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                className={`px-3 py-1.5 rounded-lg transition-all ${subjectFilterTab === 'all' ? 'bg-gradient-to-r from-[#1d3a5a] to-[#2e4a67] text-white shadow-xs' : 'text-[#566478] hover:text-[#16253b]'}`}
               >
                 All ({allSubjects.length})
               </button>
               <button
                 onClick={() => setSubjectFilterTab('in_progress')}
-                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${subjectFilterTab === 'in_progress' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${subjectFilterTab === 'in_progress' ? 'bg-gradient-to-r from-[#1d3a5a] to-[#2e4a67] text-white shadow-xs' : 'text-[#566478] hover:text-[#16253b]'}`}
               >
-                <span>◉</span> In Progress ({allSubjects.filter(s => s.in_progress_topics > 0).length})
+                In Progress ({allSubjects.filter(s => s.in_progress_topics > 0).length})
               </button>
               <button
                 onClick={() => setSubjectFilterTab('planned')}
-                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${subjectFilterTab === 'planned' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${subjectFilterTab === 'planned' ? 'bg-gradient-to-r from-[#1d3a5a] to-[#2e4a67] text-white shadow-xs' : 'text-[#566478] hover:text-[#16253b]'}`}
               >
-                <span>○</span> Planned ({allSubjects.filter(s => s.planned_topics > 0).length})
+                Planned ({allSubjects.filter(s => s.planned_topics > 0).length})
               </button>
               <button
                 onClick={() => setSubjectFilterTab('completed')}
-                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${subjectFilterTab === 'completed' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${subjectFilterTab === 'completed' ? 'bg-gradient-to-r from-[#1d3a5a] to-[#2e4a67] text-white shadow-xs' : 'text-[#566478] hover:text-[#16253b]'}`}
               >
-                <span>✓</span> Completed ({allSubjects.filter(s => s.completed_topics > 0 && s.completed_topics === s.total_topics).length})
+                Completed ({allSubjects.filter(s => s.completed_topics > 0 && s.completed_topics === s.total_topics).length})
               </button>
             </div>
           </div>
 
           {/* Subjects Grid */}
           {loadingSubjects ? (
-            <div className="p-12 text-center text-slate-500">
-              <div className="animate-spin rounded-full h-8 w-8 border-2 border-slate-300 border-t-indigo-600 mx-auto mb-3"></div>
+            <div className="p-12 text-center text-[#566478]">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#e6eaf0] border-t-[#24425f] mx-auto mb-3"></div>
               <p className="text-sm font-medium">Loading your subjects...</p>
             </div>
           ) : subjectsError ? (
@@ -485,55 +495,48 @@ export const PlannerPage: React.FC = () => {
               <p className="text-sm text-red-600 font-medium mb-3">{subjectsError}</p>
               <button
                 onClick={loadSubjects}
-                className="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all"
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-[#eef2f6] text-[#566478] hover:bg-[#e6eaf0] transition-all"
               >
                 Retry
               </button>
             </div>
           ) : filteredSubjects.length > 0 ? (
-            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
               {filteredSubjects.map((subject) => (
                 <div
                   key={subject.id}
-                  className="rounded-xl border border-slate-200 p-5 hover:shadow-md transition-all cursor-pointer bg-white"
+                  className="rounded-xl border border-[#e6eaf0] p-5 hover:shadow-md transition-all cursor-pointer bg-white overflow-hidden"
                   onClick={() => handleOpenSubject(subject)}
                 >
-                  <h3 className="text-lg font-bold text-slate-900 mb-3">{subject.name}</h3>
-                  <div className="space-y-2 mb-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-500">Total Topics:</span>
-                      <span className="font-semibold text-slate-900">{subject.total_topics}</span>
+                  <div className="flex items-center gap-3.5 mb-3">
+                    <div className="w-13.5 h-13.5 rounded-xl bg-[#fef4eb] flex items-center justify-center">
+                      <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23e0641c'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253'/%3E%3C/svg%3E" alt="" className="w-13.5 h-13.5" style={{ width: '54px', height: '54px' }} />
                     </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-500">Completed:</span>
-                      <span className="font-semibold text-emerald-600">{subject.completed_topics}</span>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-bold text-[#16253b] leading-tight">{subject.name}</h3>
                     </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-500">In Progress:</span>
-                      <span className="font-semibold text-amber-600">{subject.in_progress_topics}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-500">Planned:</span>
-                      <span className="font-semibold text-slate-700">{subject.planned_topics}</span>
+                    <div className="w-8.5 h-8.5 rounded-full bg-white flex items-center justify-center shadow-sm">
+                      <span className="font-bold text-[#16253b] text-sm">→</span>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between pt-3 border-t border-slate-200">
-                    <div className="flex items-center gap-2">
-                      <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-2 bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full transition-all"
-                          style={{ width: `${subject.progress_percentage}%` }}
-                        />
-                      </div>
-                      <span className="text-xs font-bold text-slate-900">{subject.progress_percentage}%</span>
+                  <div className="flex items-center gap-3 text-xs text-[#566478]">
+                    <span><b>{subject.total_topics}</b> topics</span>
+                    <span><b>{subject.completed_topics}</b> done</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-3">
+                    <div className="flex-1 h-1.5 bg-[#e6eaf0] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#24425f] rounded-full transition-all"
+                        style={{ width: `${subject.progress_percentage}%` }}
+                      />
                     </div>
-                    <span className="text-xs font-semibold text-indigo-600">Open →</span>
+                    <span className="text-xs font-bold text-[#16253b]">{subject.progress_percentage}%</span>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="p-12 text-center text-slate-500">
+            <div className="p-12 text-center text-[#566478]">
               <p className="text-sm font-semibold">
                 {searchQuery ? `No subjects match "${searchQuery}"` : 'No subjects found'}
               </p>
@@ -544,59 +547,59 @@ export const PlannerPage: React.FC = () => {
 
       {/* Subject Topics View - Level 2 */}
       {selectedSubject && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        <div className="bg-white rounded-2xl border border-[#e6eaf0] shadow-sm overflow-hidden">
           {/* Header & Back Button */}
-          <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-col gap-3">
+          <div className="px-6 py-4 border-b border-[#e6eaf0] bg-[#f8fafc] flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <button
                   onClick={handleBackToSubjects}
-                  className="p-2 rounded-lg hover:bg-slate-200 transition-all text-slate-600"
+                  className="p-2 rounded-lg hover:bg-[#e6eaf0] transition-all text-[#566478]"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
                   </svg>
                 </button>
                 <div>
-                  <h2 className="font-extrabold text-slate-900 text-lg">{selectedSubject.name}</h2>
-                  <p className="text-xs text-slate-500">{subjectTopics.length} topics</p>
+                  <h2 className="font-extrabold text-[#16253b] text-lg">{selectedSubject.name}</h2>
+                  <p className="text-xs text-[#566478]">{subjectTopics.length} topics</p>
                 </div>
               </div>
             </div>
 
             {/* Topic Filter Tabs */}
-            <div className="flex items-center gap-1.5 bg-slate-200/60 p-1 rounded-xl text-xs font-bold self-start">
+            <div className="flex items-center gap-1.5 bg-[#eef2f6] p-1 rounded-xl text-xs font-bold self-start">
               <button
                 onClick={() => setTopicFilterTab('all')}
-                className={`px-3 py-1.5 rounded-lg transition-all ${topicFilterTab === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                className={`px-3 py-1.5 rounded-lg transition-all ${topicFilterTab === 'all' ? 'bg-gradient-to-r from-[#1d3a5a] to-[#2e4a67] text-white shadow-xs' : 'text-[#566478] hover:text-[#16253b]'}`}
               >
                 All ({subjectTopics.length})
               </button>
               <button
                 onClick={() => setTopicFilterTab('in_progress')}
-                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${topicFilterTab === 'in_progress' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${topicFilterTab === 'in_progress' ? 'bg-gradient-to-r from-[#1d3a5a] to-[#2e4a67] text-white shadow-xs' : 'text-[#566478] hover:text-[#16253b]'}`}
               >
-                <span>◉</span> In Progress ({subjectTopics.filter(t => t.status === 'in_progress').length})
+                In Progress ({subjectTopics.filter(t => t.status === 'in_progress').length})
               </button>
               <button
                 onClick={() => setTopicFilterTab('planned')}
-                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${topicFilterTab === 'planned' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${topicFilterTab === 'planned' ? 'bg-gradient-to-r from-[#1d3a5a] to-[#2e4a67] text-white shadow-xs' : 'text-[#566478] hover:text-[#16253b]'}`}
               >
-                <span>○</span> Planned ({subjectTopics.filter(t => t.status === 'pending').length})
+                Planned ({subjectTopics.filter(t => t.status === 'pending').length})
               </button>
               <button
                 onClick={() => setTopicFilterTab('completed')}
-                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${topicFilterTab === 'completed' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${topicFilterTab === 'completed' ? 'bg-gradient-to-r from-[#1d3a5a] to-[#2e4a67] text-white shadow-xs' : 'text-[#566478] hover:text-[#16253b]'}`}
               >
-                <span>✓</span> Completed ({subjectTopics.filter(t => t.status === 'done').length})
+                Completed ({subjectTopics.filter(t => t.status === 'done').length})
               </button>
             </div>
           </div>
 
           {/* Topics Grid */}
           {loadingSubjectTopics ? (
-            <div className="p-12 text-center text-slate-500">
-              <div className="animate-spin rounded-full h-8 w-8 border-2 border-slate-300 border-t-indigo-600 mx-auto mb-3"></div>
+            <div className="p-12 text-center text-[#566478]">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#e6eaf0] border-t-[#24425f] mx-auto mb-3"></div>
               <p className="text-sm font-medium">Loading topics...</p>
             </div>
           ) : (() => {

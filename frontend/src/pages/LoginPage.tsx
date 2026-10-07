@@ -21,13 +21,29 @@ export const LoginPage: React.FC = () => {
     setError('');
     setLoading(true);
 
+    if (!email.trim()) {
+      setError('Please enter your email address.');
+      setLoading(false);
+      return;
+    }
+
+    if (!password) {
+      setError('Please enter your password.');
+      setLoading(false);
+      return;
+    }
+
     try {
       const response = await login({ email, password });
       setToken(response.access_token);
       navigate('/planner');
     } catch (err: any) {
       if (err.response?.status === 401) {
-        setError('Invalid email or password');
+        setError('Invalid email or password. Please check your details and try again.');
+      } else if (err.code === 'ERR_NETWORK' || !err.response) {
+        setError('We couldn\'t connect to the server. Please check your connection and try again.');
+      } else if (err.response?.status >= 500) {
+        setError('Something went wrong on our side. Please try again in a moment.');
       } else {
         setError('Login failed. Please try again.');
       }
@@ -37,35 +53,35 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 via-indigo-50/40 to-slate-100 p-4 sm:p-6">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl shadow-slate-200/60 border border-slate-200/80 p-8 sm:p-10 transition-all">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#eaf3fc] to-[#fbeee4] p-4 sm:p-6">
+      <div className="max-w-md w-full bg-white border border-[#e6eaf0] rounded-2xl shadow-lg p-8 sm:p-10">
         {/* Brand Header */}
         <div className="text-center space-y-3">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 text-white shadow-lg shadow-indigo-500/25 mb-1">
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-[#24425f] text-white shadow-lg mb-1">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
             </svg>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Welcome Back
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#16253b] tracking-tight">
+            Welcome back
           </h1>
-          <p className="text-sm text-slate-500">
-            Sign in to access your study plans, focus tracking, and AI tutor.
+          <p className="text-sm text-[#566478]">
+            Sign in to open your study plans, focus sessions and AI tutor.
           </p>
         </div>
 
         {/* Demo Credentials Quick Fill Banner */}
-        <div className="mt-6 p-3.5 bg-indigo-50/80 border border-indigo-200/70 rounded-xl flex items-center justify-between gap-3">
-          <div className="text-xs text-indigo-900 leading-tight">
-            <span className="font-semibold block text-indigo-950">Demo Credentials Available</span>
-            <span className="text-indigo-700">student@studyplatform.local</span>
+        <div className="mt-6 p-3.5 bg-[#e8f1fc] border border-[#d4e3f3] rounded-xl flex items-center justify-between gap-3">
+          <div className="text-xs text-[#24425f] leading-tight">
+            <span className="font-semibold block text-[#1d3a5a]">Demo account</span>
+            <span className="text-[#566478]">student@studyplatform.local</span>
           </div>
           <button
             type="button"
             onClick={handleFillDemo}
-            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95 transition-all shadow-xs cursor-pointer whitespace-nowrap"
+            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#24425f] text-white hover:bg-[#1d3a5a] active:scale-95 transition-all shadow-xs cursor-pointer whitespace-nowrap"
           >
-            ⚡ Auto-Fill
+            Auto-fill
           </button>
         </div>
 
@@ -81,13 +97,13 @@ export const LoginPage: React.FC = () => {
           )}
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-              Email Address
+            <label className="block text-xs font-semibold text-[#16253b] mb-1.5">
+              Email address
             </label>
             <input
               type="email"
               required
-              className="w-full px-3.5 py-2.5 bg-slate-50/50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all text-sm"
+              className="w-full px-3.5 py-2.5 bg-white border border-[#e6eaf0] rounded-xl text-[#16253b] placeholder-[#8b96a8] focus:outline-none focus:ring-2 focus:ring-[#24425f] focus:border-[#24425f] transition-all text-sm"
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -95,13 +111,13 @@ export const LoginPage: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+            <label className="block text-xs font-semibold text-[#16253b] mb-1.5">
               Password
             </label>
             <input
               type="password"
               required
-              className="w-full px-3.5 py-2.5 bg-slate-50/50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all text-sm"
+              className="w-full px-3.5 py-2.5 bg-white border border-[#e6eaf0] rounded-xl text-[#16253b] placeholder-[#8b96a8] focus:outline-none focus:ring-2 focus:ring-[#24425f] focus:border-[#24425f] transition-all text-sm"
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -112,7 +128,7 @@ export const LoginPage: React.FC = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 px-4 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md shadow-indigo-600/20 active:scale-[0.99] cursor-pointer"
+              className="w-full py-3 px-4 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-[#1d3a5a] to-[#2e4a67] hover:from-[#16253b] hover:to-[#24425f] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#24425f] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#1d3a5a]/25 active:scale-[0.99] cursor-pointer"
             >
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
@@ -123,19 +139,19 @@ export const LoginPage: React.FC = () => {
                   Signing in...
                 </span>
               ) : (
-                'Sign In to Dashboard'
+                'Sign in'
               )}
             </button>
           </div>
 
           <div className="text-center pt-2">
-            <span className="text-xs text-slate-500">
-              Don't have an account?{' '}
+            <span className="text-xs text-[#566478]">
+              New here?{' '}
               <Link
                 to="/register"
-                className="font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
+                className="font-semibold text-[#24425f] hover:text-[#1d3a5a] hover:underline"
               >
-                Create Account
+                Create an account
               </Link>
             </span>
           </div>

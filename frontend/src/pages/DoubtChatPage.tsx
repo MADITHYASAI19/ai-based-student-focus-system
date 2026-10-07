@@ -53,10 +53,22 @@ export const DoubtChatPage: React.FC = () => {
 
   const handleFileUpload = async (file: File) => {
     if (!file) return;
-    
+
+    // Validate file type
+    if (!file.name.toLowerCase().endsWith('.pdf') && !file.name.toLowerCase().endsWith('.txt')) {
+      setError('Please upload a PDF or text file.');
+      return;
+    }
+
+    // Validate file size (10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setError('File is too large. Please upload a file smaller than 10 MB.');
+      return;
+    }
+
     setUploading(true);
     setError(null);
-    
+
     try {
       const document = await uploadDoubtDocument(file);
       setUploadedDocument({
@@ -71,8 +83,14 @@ export const DoubtChatPage: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Failed to upload document:', err);
-      const errorMessage = err.response?.data?.detail || 'Failed to upload document. Please try again.';
-      setError(errorMessage);
+      if (err.code === 'ERR_NETWORK' || !err.response) {
+        setError('Unable to upload the document. Please check your connection and try again.');
+      } else if (err.response?.status >= 500) {
+        setError('The PDF was uploaded, but we couldn\'t process it. Please try again.');
+      } else {
+        const errorMessage = err.response?.data?.detail || 'Failed to upload document. Please try again.';
+        setError(errorMessage);
+      }
     } finally {
       setUploading(false);
     }
@@ -201,14 +219,14 @@ export const DoubtChatPage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-5">
       {/* Title */}
       <div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-          AI Doubt Tutor
+        <h1 className="text-3xl font-extrabold text-[#16253b] tracking-tight">
+          AI doubt tutor
         </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Ask anything. Upload a document when you want answers based on your study material.
+        <p className="text-sm text-[#566478] mt-1">
+          Ask anything. Upload notes to get answers grounded in your material.
         </p>
       </div>
 
@@ -219,98 +237,88 @@ export const DoubtChatPage: React.FC = () => {
       )}
 
       {/* PDF Upload Section */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
-            📄 Upload PDF (Optional)
+      <div className="bg-white rounded-2xl border border-[#e6eaf0] p-5 shadow-sm">
+        <div
+          onClick={() => fileInputRef.current?.click()}
+          className="border-1.5 border-dashed border-[#e6eaf0] rounded-xl p-7 text-center cursor-pointer hover:border-[#24425f] transition-colors"
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.txt"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleFileUpload(file);
+            }}
+            className="hidden"
+          />
+          <p className="text-sm font-bold text-[#16253b]">
+            {uploading ? 'Uploading and processing document...' : 'Drop a PDF here or click to upload'}
           </p>
-          {uploadedDocument && (
-            <button
-              type="button"
-              onClick={() => setUploadedDocument(null)}
-              className="text-xs text-red-600 hover:text-red-700 font-medium"
-            >
-              Remove
-            </button>
-          )}
+          <p className="text-xs text-[#566478] mt-1">
+            PDF or text files up to 10 MB. Optional.
+          </p>
         </div>
-        
-        {!uploadedDocument ? (
-          <div
-            onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/50 transition-colors"
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.txt"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleFileUpload(file);
-              }}
-              className="hidden"
-            />
-            <p className="text-sm text-slate-600">
-              {uploading ? 'Processing document...' : 'Drag & drop or click to upload'}
-            </p>
-            <p className="text-xs text-slate-400 mt-1">
-              PDF or text files up to 10MB
-            </p>
-          </div>
-        ) : (
-          <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-            <span className="text-2xl">📄</span>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-slate-800">{uploadedDocument.filename}</p>
-              <p className="text-xs text-emerald-700">Ready to use</p>
+        {uploadedDocument && (
+          <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-emerald-600 font-bold">✓</span>
+                <span className="text-sm font-semibold text-emerald-800">{uploadedDocument.filename}</span>
+              </div>
+              <button
+                onClick={() => {
+                  setUploadedDocument(null);
+                  setSelectedTopicId(undefined);
+                }}
+                className="text-xs text-red-600 font-semibold hover:text-red-700"
+              >
+                Remove
+              </button>
             </div>
+            <p className="text-xs text-emerald-700 mt-1">Document processed and ready for RAG queries.</p>
           </div>
         )}
-      </div>
-
-      {/* Suggested Quick Questions */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs">
-        <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">
-          💡 Try Sample Queries
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {SUGGESTED_QUESTIONS.map((item, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => {
-                if (!item.isOffTopic) {
-                  setSelectedSubjectId(item.subjectId);
-                }
-                handleAskDoubt(item.text);
-              }}
-              className="text-xs px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-700 transition-colors cursor-pointer text-left"
-            >
-              {item.isOffTopic ? '⚠️ Off-Topic Guardrail: ' : ''}{item.text}
-            </button>
-          ))}
+        <div className="mt-4">
+          <span className="text-xs text-[#8b96a8]">Try asking:</span>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {SUGGESTED_QUESTIONS.map((item, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => {
+                  if (!item.isOffTopic) {
+                    setSelectedSubjectId(item.subjectId);
+                  }
+                  handleAskDoubt(item.text);
+                }}
+                className="text-xs px-3 py-1.5 rounded-lg bg-white border border-[#e6eaf0] hover:border-[#24425f] text-[#566478] hover:text-[#16253b] transition-colors cursor-pointer"
+              >
+                {item.text}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* Chat Messages Stream */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs flex flex-col min-h-[480px]">
+      <div className="bg-white rounded-2xl border border-[#e6eaf0] shadow-sm flex flex-col min-h-[480px]">
         {/* Subject Header */}
-        <div className="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 rounded-t-2xl">
+        <div className="px-6 py-3.5 border-b border-[#e6eaf0] flex items-center justify-between bg-[#f8fafc] rounded-t-2xl">
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="text-xs font-semibold text-slate-700">
-              {uploadedDocument ? 'Document RAG + AI Active' : 'General AI Active'}
+            <span className="w-2.5 h-2.5 rounded-full bg-[#138a5e]"></span>
+            <span className="text-xs font-semibold text-[#566478]">
+              General AI active
             </span>
           </div>
 
           <div className="flex items-center gap-2">
-            <label className="text-xs font-semibold text-slate-500">Subject:</label>
             <select
               value={selectedSubjectId ?? ''}
               onChange={(e) => setSelectedSubjectId(e.target.value ? Number(e.target.value) : null)}
-              className="text-xs font-semibold bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="text-xs font-semibold bg-white border border-[#e6eaf0] rounded-lg px-2.5 py-1 text-[#16253b] focus:outline-none focus:ring-2 focus:ring-[#24425f]"
             >
-              <option value="">General AI (No subject)</option>
+              <option value="">General AI (no subject)</option>
               {AVAILABLE_SUBJECTS.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -319,11 +327,11 @@ export const DoubtChatPage: React.FC = () => {
             </select>
             {selectedSubjectId && (
               <>
-                <label className="text-xs font-semibold text-slate-500">Topic:</label>
+                <label className="text-xs font-semibold text-[#566478]">Topic:</label>
                 <select
                   value={selectedTopicId ?? ''}
                   onChange={(e) => setSelectedTopicId(e.target.value ? Number(e.target.value) : undefined)}
-                  className="text-xs font-semibold bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="text-xs font-semibold bg-white border border-[#e6eaf0] rounded-lg px-2.5 py-1 text-[#16253b] focus:outline-none focus:ring-2 focus:ring-[#24425f]"
                 >
                   <option value="">All subject notes</option>
                   {AVAILABLE_TOPICS.filter((topic) => topic.subjectId === selectedSubjectId).map((topic) => (
@@ -334,11 +342,11 @@ export const DoubtChatPage: React.FC = () => {
                 </select>
               </>
             )}
-            <label className="text-xs font-semibold text-slate-500">Source Mode:</label>
+            <label className="text-xs font-semibold text-[#566478]">Source Mode:</label>
             <select
               value={sourceMode}
               onChange={(e) => setSourceMode(e.target.value as 'pdf+ai' | 'pdf_only' | 'general_ai')}
-              className="text-xs font-semibold bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="text-xs font-semibold bg-white border border-[#e6eaf0] rounded-lg px-2.5 py-1 text-[#16253b] focus:outline-none focus:ring-2 focus:ring-[#24425f]"
             >
               <option value="pdf+ai">PDF + AI</option>
               <option value="pdf_only">PDF Only</option>
@@ -355,7 +363,7 @@ export const DoubtChatPage: React.FC = () => {
               className={`flex gap-3 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               {msg.sender === 'ai' && (
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 text-white flex items-center justify-center font-bold text-xs flex-shrink-0 mt-1 shadow-xs">
+                <div className="w-8 h-8 rounded-full bg-[#24425f] text-white flex items-center justify-center font-bold text-xs flex-shrink-0 mt-1">
                   AI
                 </div>
               )}
@@ -363,28 +371,28 @@ export const DoubtChatPage: React.FC = () => {
               <div
                 className={`max-w-2xl rounded-2xl p-4 sm:p-5 text-sm ${
                   msg.sender === 'user'
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/15'
-                    : 'bg-slate-50 border border-slate-200/90 text-slate-800'
+                    ? 'bg-[#24425f] text-white shadow-md shadow-[#24425f]/15'
+                    : 'bg-[#f4f6f8] border border-[#e6eaf0] text-[#16253b]'
                 }`}
               >
                 {/* AI Metadata Tags */}
                 {msg.sender === 'ai' && msg.id !== 'welcome' && (
-                  <div className="flex flex-wrap items-center gap-2 mb-2 pb-2 border-b border-slate-200/60">
+                  <div className="flex flex-wrap items-center gap-2 mb-2 pb-2 border-b border-[#e6eaf0]">
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider ${
                         msg.confidence === 'high'
-                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                          : 'bg-amber-100 text-amber-800 border border-amber-200'
+                          ? 'bg-[#e5f8ed] text-[#138a5e] border border-[#c3ebd3]'
+                          : 'bg-[#fff1e4] text-[#e0641c] border border-[#f5d6b8]'
                       }`}
                     >
                       {msg.confidence === 'high' ? '✓ High Confidence' : '⚠️ Low Confidence'}
                     </span>
                     {msg.sourceType && (
-                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-slate-100 text-slate-700 border border-slate-300">
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-[#eef2f6] text-[#566478] border border-[#e6eaf0]">
                         {renderSourceLabel(msg.sourceType)}
                       </span>
                     )}
-                    <span className="text-[11px] text-slate-400 font-medium">Scope: {msg.subjectName}</span>
+                    <span className="text-[11px] text-[#8b96a8] font-medium">Scope: {msg.subjectName}</span>
                   </div>
                 )}
 
@@ -410,7 +418,7 @@ export const DoubtChatPage: React.FC = () => {
               </div>
 
               {msg.sender === 'user' && (
-                <div className="w-8 h-8 rounded-xl bg-slate-800 text-white flex items-center justify-center font-bold text-xs flex-shrink-0 mt-1 shadow-xs">
+                <div className="w-8 h-8 rounded-full bg-[#16253b] text-white flex items-center justify-center font-bold text-xs flex-shrink-0 mt-1">
                   U
                 </div>
               )}
@@ -419,11 +427,11 @@ export const DoubtChatPage: React.FC = () => {
 
           {loading && (
             <div className="flex gap-3 justify-start">
-              <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-xs flex-shrink-0 animate-pulse">
+              <div className="w-8 h-8 rounded-full bg-[#24425f] text-white flex items-center justify-center font-bold text-xs flex-shrink-0 animate-pulse">
                 AI
               </div>
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-xs text-slate-500 flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-indigo-600 animate-ping"></div>
+              <div className="bg-[#f4f6f8] border border-[#e6eaf0] rounded-2xl p-4 text-xs text-[#566478] flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-[#24425f] animate-ping"></div>
                 {sourceMode === 'general_ai' ? 'Querying AI knowledge base...' : 'Searching ChromaDB vector store and reasoning answer...'}
               </div>
             </div>
@@ -431,7 +439,7 @@ export const DoubtChatPage: React.FC = () => {
         </div>
 
         {/* Input Bar */}
-        <div className="p-4 border-t border-slate-100 bg-white rounded-b-2xl">
+        <div className="p-4 border-t border-[#e6eaf0] bg-white rounded-b-2xl">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -445,17 +453,14 @@ export const DoubtChatPage: React.FC = () => {
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               disabled={loading}
-              className="flex-1 px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="flex-1 px-4 py-3 bg-white border border-[#e6eaf0] rounded-xl text-[#16253b] placeholder-[#8b96a8] text-sm focus:outline-none focus:ring-2 focus:ring-[#24425f]"
             />
             <button
               type="submit"
               disabled={loading || !question.trim()}
-              className="px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm shadow-md shadow-indigo-600/20 disabled:opacity-50 transition-all cursor-pointer flex items-center gap-1.5"
+              className="px-5 py-3 rounded-xl bg-gradient-to-r from-[#1d3a5a] to-[#2e4a67] hover:from-[#16253b] hover:to-[#24425f] text-white font-semibold text-sm shadow-lg shadow-[#1d3a5a]/25 disabled:opacity-50 transition-all cursor-pointer"
             >
-              <span>Send</span>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-              </svg>
+              Send
             </button>
           </form>
         </div>

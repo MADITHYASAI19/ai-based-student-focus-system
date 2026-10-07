@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from '../hooks/useSession';
 import { useAuth } from '../contexts/AuthContext';
+import { useNotifications } from '../contexts/NotificationContext';
 import { useFaceDetection } from '../hooks/useFaceDetection';
 import { usePhoneDetection } from '../hooks/usePhoneDetection';
 import { useProctoring } from '../hooks/useProctoring';
@@ -46,6 +47,7 @@ const ExplanationContent: React.FC<{ text: string }> = ({ text }) => {
 export const SessionPage: React.FC = () => {
   const { session, loading, error, elapsedTime, formatTime, startSession, endSession } = useSession();
   const { userState, refreshUserState } = useAuth();
+  const { celebrateCompletion, generateScheduleNotifications } = useNotifications();
   const navigate = useNavigate();
   const faceDetection = useFaceDetection();
   const phoneDetection = usePhoneDetection(faceDetection.videoRef);
@@ -136,6 +138,10 @@ export const SessionPage: React.FC = () => {
             setSelectedPlanItemId(firstPending.id);
             setDurationMinutes(firstPending.duration_minutes || 45);
           }
+          // Generate schedule notifications for active plan
+          if (activePlan.is_active) {
+            generateScheduleNotifications(activePlan);
+          }
         }
         setPlansError('');
         setSubjectsError(null);
@@ -149,7 +155,7 @@ export const SessionPage: React.FC = () => {
         setPlansLoading(false);
         setLoadingSubjects(false);
       });
-  }, [userState?.active_plan]);
+  }, [userState?.active_plan, generateScheduleNotifications]);
 
   const loadSubjectTopics = async (subjectId: number) => {
     setLoadingSubjectTopics(true);
@@ -180,43 +186,6 @@ export const SessionPage: React.FC = () => {
       .then(setHistory)
       .catch(() => {});
   }, []);
-
-  // ── Load subjects on mount ────────────────────────────────────────────────────
-  useEffect(() => {
-    setPlansLoading(true);
-    setLoadingSubjects(true);
-    Promise.all([
-      getAllPlans(),
-      getUserSubjects(),
-    ])
-      .then(([items, subjectsResponse]) => {
-        setPlans(items);
-        setAllSubjects(subjectsResponse.subjects || []);
-
-        // Prioritize active plan from user state
-        const activePlan = userState?.active_plan || items[0];
-        if (activePlan) {
-          setSelectedPlanId(activePlan.id);
-          // Auto-select first pending item
-          const firstPending = activePlan.items.find((item) => item.status === 'pending') ?? activePlan.items[0];
-          if (firstPending) {
-            setSelectedPlanItemId(firstPending.id);
-            setDurationMinutes(firstPending.duration_minutes || 45);
-          }
-        }
-        setPlansError('');
-        setSubjectsError(null);
-      })
-      .catch((err) => {
-        console.error('Failed to load study plans:', err);
-        setPlansError('Study plans could not be loaded. Please refresh and try again.');
-        setSubjectsError('Failed to load subjects. Please try again.');
-      })
-      .finally(() => {
-        setPlansLoading(false);
-        setLoadingSubjects(false);
-      });
-  }, [userState?.active_plan]);
 
   // ── Derive selected plan and item ─────────────────────────────────────────
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
@@ -275,7 +244,7 @@ export const SessionPage: React.FC = () => {
     if (!selectedItem) return;
     setMarkingDone(true);
     try {
-      await updatePlanItemStatus(selectedItem.id, 'done');
+      const updatedItem = await updatePlanItemStatus(selectedItem.id, 'done');
       // Refresh plans and user state
       const updated = await getAllPlans();
       setPlans(updated);
@@ -285,6 +254,10 @@ export const SessionPage: React.FC = () => {
       if (nextPending) {
         setSelectedPlanItemId(nextPending.id);
         setDurationMinutes(nextPending.duration_minutes || 45);
+      }
+      // Trigger celebration notification
+      if (updatedItem) {
+        celebrateCompletion(updatedItem.topic_name);
       }
     } catch (err) {
       console.error('Failed to mark done:', err);
@@ -304,30 +277,22 @@ export const SessionPage: React.FC = () => {
   const remainingDuration = remainingItems.reduce((acc, curr) => acc + (curr.duration_minutes || 0), 0);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       {/* ── Page header ────────────────────────────────────────────────────── */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-6 border-b border-slate-200/80">
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Focus Session
+          <h1 className="text-3xl font-extrabold text-[#16253b] tracking-tight">
+            Focus session
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Real-time focus monitoring, structured topic breakdown, and active roadmap tracking.
+          <p className="text-sm text-[#566478] mt-1">
+            Live focus monitoring and your active roadmap.
           </p>
         </div>
         {selectedPlan && (
-          <div className="flex items-center gap-3 bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-2xs">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Overall Plan Progress</span>
-              <span className="text-sm font-extrabold text-slate-800">
-                {doneItems} of {totalItems} completed ({progressPct}%)
-              </span>
-            </div>
-            <div className="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full transition-all"
-                style={{ width: `${progressPct}%` }}
-              />
+          <div className="bg-white rounded-2xl border border-[#e6eaf0] shadow-sm p-4 min-w-[210px]">
+            <p className="text-xs text-[#566478]">Plan progress: {doneItems} of {totalItems} ({progressPct}%)</p>
+            <div className="w-full h-1.5 bg-[#e6eaf0] rounded-full overflow-hidden mt-2">
+              <div className="h-full bg-[#24425f] rounded-full transition-all" style={{ width: `${progressPct}%` }} />
             </div>
           </div>
         )}

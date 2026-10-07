@@ -365,3 +365,20 @@ export interface StoredExplanation {
 export interface StoredExplanationsResponse {
   explanations: StoredExplanation[];
 }
+
+export type NotificationType = 'upcoming_study' | 'study_starting' | 'study_completed' | 'study_overdue' | 'quiz_reminder' | 'celebration';
+
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  topicName?: string;
+  scheduledTime?: string;
+  isRead: boolean;
+  createdAt: string;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
+}

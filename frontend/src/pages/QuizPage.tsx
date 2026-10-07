@@ -40,7 +40,6 @@ export const QuizPage: React.FC = () => {
   const [faceTrackingEnabled, setFaceTrackingEnabled] = useState(true);
   
   // PDF upload state
-  const [uploadedPdf, setUploadedPdf] = useState<File | null>(null);
   const [uploadingPdf, setUploadingPdf] = useState(false);
   const [uploadedDocument, setUploadedDocument] = useState<StudyDocument | null>(null);
   
@@ -112,11 +111,10 @@ export const QuizPage: React.FC = () => {
     
     setUploadingPdf(true);
     setError(null);
-    
+
     try {
       const document = await uploadTopicDocument(selectedTopic.id, file);
       setUploadedDocument(document);
-      setUploadedPdf(file);
     } catch (err: any) {
       console.error('PDF upload failed:', err);
       setError(err.response?.data?.detail || 'Failed to upload PDF. Please try again.');
@@ -467,20 +465,20 @@ export const QuizPage: React.FC = () => {
   };
   
   return (
-    <div className="max-w-5xl mx-auto space-y-8">
+    <div className="max-w-5xl mx-auto space-y-5">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200/80">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            AI Adaptive Quizzes
+          <h1 className="text-3xl font-extrabold text-[#16253b] tracking-tight">
+            AI quizzes
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Generate topic-based quizzes with multiple question types, adaptive difficulty, and detailed performance analytics.
+          <p className="text-sm text-[#566478] mt-1">
+            Pick a topic, set the rules and generate a quiz in seconds.
           </p>
         </div>
         <button
           onClick={() => setShowHistory(!showHistory)}
-          className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm transition-all"
+          className="px-4 py-2 rounded-xl bg-[#eef2f6] hover:bg-[#e6eaf0] text-[#566478] font-semibold text-sm transition-all border border-[#e6eaf0]"
         >
           {showHistory ? 'Hide History' : 'View History'}
         </button>
@@ -618,23 +616,21 @@ export const QuizPage: React.FC = () => {
 
       {/* Quiz Configuration Screen */}
       {!quiz && !showResults && !showTestRules && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">
+        <div className="bg-white rounded-2xl border border-[#e6eaf0] shadow-sm p-6 space-y-6">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-[#566478]">
             Configure Your Quiz
           </h2>
-          
+
           {/* Topic Selection */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-              1. Select Topic
-            </label>
+          <div className="mt-4">
+            <h4 className="text-[13.5px] font-semibold mb-3">1. Select topic</h4>
             {loadingTopics ? (
-              <div className="flex items-center gap-3 text-sm text-indigo-600">
-                <div className="w-4 h-4 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" />
+              <div className="flex items-center gap-3 text-sm text-[#24425f]">
+                <div className="w-4 h-4 border-2 border-[#e6eaf0] border-t-[#24425f] rounded-full animate-spin" />
                 Loading available topics...
               </div>
             ) : availableTopics.length === 0 ? (
-              <div className="p-4 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl text-sm text-center">
+              <div className="p-4 bg-[#fff1e4] border border-[#e6eaf0] text-[#e0641c] rounded-xl text-sm text-center">
                 No topics available. Add topics to your study plan first.
               </div>
             ) : (
@@ -653,9 +649,9 @@ export const QuizPage: React.FC = () => {
                   return Object.entries(topicsBySubject).map(([subjectName, topics]) => (
                     <div key={subjectName} className="space-y-2">
                       {/* Subject Header */}
-                      <div className="flex items-center gap-2 pb-1 border-b border-slate-200">
-                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{subjectName}</span>
-                        <span className="text-[10px] text-slate-400">({topics.length})</span>
+                      <div className="flex items-center gap-2 pb-1 border-b border-[#e6eaf0]">
+                        <span className="text-xs font-bold text-[#566478] uppercase tracking-wider">{subjectName}</span>
+                        <span className="text-[10px] text-[#8b96a8]">({topics.length})</span>
                       </div>
                       {/* Subject Topics */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -666,14 +662,14 @@ export const QuizPage: React.FC = () => {
                               key={topic.id}
                               type="button"
                               onClick={() => setSelectedTopic(topic)}
-                              className={`p-4 rounded-xl text-left border transition-all cursor-pointer ${
+                              className={`p-3 rounded-xl text-left border transition-all cursor-pointer ${
                                 isSelected
-                                  ? 'bg-indigo-50/90 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
-                                  : 'bg-white border-slate-200 hover:border-slate-300'
+                                  ? 'bg-[#e8f1fc] border-[#24425f] shadow-sm'
+                                  : 'bg-white border-[#e6eaf0] hover:border-[#24425f]'
                               }`}
                             >
-                              <p className="text-sm font-bold text-slate-900">{topic.name}</p>
-                              <p className="text-xs text-slate-500 mt-1 capitalize">{topic.difficulty}</p>
+                              <p className="text-sm font-bold text-[#16253b]">{topic.name}</p>
+                              <p className="text-xs text-[#8b96a8] mt-1 capitalize">{topic.difficulty}</p>
                             </button>
                           );
                         })}
@@ -1000,7 +996,6 @@ export const QuizPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => {
-                        setUploadedPdf(null);
                         setUploadedDocument(null);
                       }}
                       className="text-xs text-red-600 font-semibold hover:text-red-700 underline"

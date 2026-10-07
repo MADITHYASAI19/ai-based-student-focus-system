@@ -381,6 +381,7 @@ def get_topics_for_subject(db: Session, student_id: int, subject_id: int) -> lis
         List of topic dictionaries with id, name, status, etc.
     """
     # Get all topics from the specific subject that are in the user's plans
+    # No status filter - completed topics should still appear
     query = (
         db.query(Topic)
         .join(PlanItem, PlanItem.topic_id == Topic.id)
