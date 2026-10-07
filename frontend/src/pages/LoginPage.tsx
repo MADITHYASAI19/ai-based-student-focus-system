@@ -19,31 +19,52 @@ export const LoginPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    const trimmedEmail = email.trim();
+    const trimmedPassword = password;
+
+    if (!trimmedEmail && !trimmedPassword) {
+      setError('Please enter your email and password.');
+      return;
+    }
+
+    if (!trimmedEmail) {
+      setError('Please enter your email address.');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
+    if (!trimmedPassword) {
+      setError('Please enter your password.');
+      return;
+    }
+
     setLoading(true);
 
-    if (!email.trim()) {
-      setError('Please enter your email address.');
-      setLoading(false);
-      return;
-    }
-
-    if (!password) {
-      setError('Please enter your password.');
-      setLoading(false);
-      return;
-    }
-
     try {
-      const response = await login({ email, password });
+      const response = await login({ email: trimmedEmail, password: trimmedPassword });
       setToken(response.access_token);
       navigate('/planner');
     } catch (err: any) {
-      if (err.response?.status === 401) {
-        setError('Invalid email or password. Please check your details and try again.');
+      const status = err.response?.status;
+      const errorData = typeof err === 'string' ? err : (err.response?.data || err.message || '');
+      const errorString = JSON.stringify(errorData).toLowerCase();
+
+      if (status === 401 || errorString.includes('password') || errorString.includes('credential')) {
+        setError('Incorrect email or password. Please try again.');
+      } else if (status === 429) {
+        setError('Too many login attempts. Please wait a moment and try again.');
+      } else if (status === 403) {
+        setError('You don\'t have permission to sign in at this time.');
+      } else if (status && status >= 500) {
+        setError('Something went wrong on our server. Please try again in a moment.');
       } else if (err.code === 'ERR_NETWORK' || !err.response) {
-        setError('We couldn\'t connect to the server. Please check your connection and try again.');
-      } else if (err.response?.status >= 500) {
-        setError('Something went wrong on our side. Please try again in a moment.');
+        setError('Unable to connect to the server. Please check your internet connection and try again.');
       } else {
         setError('Login failed. Please try again.');
       }

@@ -260,23 +260,30 @@ export const DoubtChatPage: React.FC = () => {
           </p>
         </div>
         {uploadedDocument && (
-          <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-emerald-600 font-bold">✓</span>
-                <span className="text-sm font-semibold text-emerald-800">{uploadedDocument.filename}</span>
-              </div>
-              <button
-                onClick={() => {
-                  setUploadedDocument(null);
-                  setSelectedTopicId(undefined);
-                }}
-                className="text-xs text-red-600 font-semibold hover:text-red-700"
-              >
-                Remove
-              </button>
+          <div className="mt-4 p-4 bg-white border border-emerald-200 rounded-xl shadow-sm flex items-center gap-4">
+            <div className="w-12 h-16 bg-emerald-50 border border-emerald-100 rounded-md flex items-center justify-center flex-shrink-0">
+              <svg className="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
             </div>
-            <p className="text-xs text-emerald-700 mt-1">Document processed and ready for RAG queries.</p>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold text-[#16253b] truncate">{uploadedDocument.filename}</span>
+                <button
+                  onClick={() => {
+                    setUploadedDocument(null);
+                    setSelectedTopicId(undefined);
+                  }}
+                  className="text-xs text-red-500 font-semibold hover:text-red-700 transition-colors"
+                >
+                  Remove
+                </button>
+              </div>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase">PDF Document</span>
+                <span className="text-xs text-emerald-600 font-medium">✓ Processed & Ready</span>
+              </div>
+            </div>
           </div>
         )}
         <div className="mt-4">

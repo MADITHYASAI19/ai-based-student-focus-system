@@ -118,42 +118,42 @@ def _determine_source_type(sections: list[AnswerSection]) -> str:
 
 def answer_doubt(question: str, context_chunks: list[dict], source_mode: str = "pdf+ai", conversation_history: list[dict] | None = None) -> DoubtAnswer:
     """Answer a student's doubt using context-grounded LLM generation.
-    
+
     Args:
         question: The student's question
         context_chunks: List of relevant context chunks from RAG retrieval,
                         each with keys: id, text, metadata, similarity_score
         source_mode: "pdf+ai" (default), "pdf_only", or "general_ai"
         conversation_history: Optional list of previous messages for context
-        
+
     Returns:
         DoubtAnswer: The answer with source chunk IDs, confidence, and source-aware sections
-        
+
     Raises:
         ValueError: If LLM call fails or returns empty response
     """
     if not question.strip():
         raise ValueError("Question cannot be empty")
-    
+
     # Handle source_mode: general_ai skips RAG entirely
     if source_mode == "general_ai":
         try:
             messages = [
                 {"role": "system", "content": "You are a helpful AI study companion. Answer the student's question clearly and concisely."},
             ]
-            
+
             # Add conversation history if provided (last 5 messages)
             if conversation_history:
                 recent_history = conversation_history[-5:] if len(conversation_history) > 5 else conversation_history
                 messages.extend(recent_history)
-            
+
             messages.append({"role": "user", "content": question.strip()})
-            
+
             answer = _call_llm(messages)
-            
+
             if not answer.strip():
                 raise ValueError("LLM returned empty response")
-            
+
             return DoubtAnswer(
                 answer_text=answer,
                 source_chunk_ids=[],
@@ -164,7 +164,7 @@ def answer_doubt(question: str, context_chunks: list[dict], source_mode: str = "
         except Exception as e:
             logger.error(f"Failed to answer doubt with general AI: {e}")
             raise ValueError(f"Doubt resolution failed: {e}") from e
-    
+
     # pdf_only or pdf+ai: use RAG
     if not context_chunks:
         logger.warning("No context chunks provided for doubt resolution")
@@ -175,41 +175,77 @@ def answer_doubt(question: str, context_chunks: list[dict], source_mode: str = "
             sections=[AnswerSection(type="pdf", content="No relevant PDF content found.", sources=None)],
             source_type="none"
         )
-    
+
     # Step 1: Check similarity threshold before spending API call
     top_chunk = context_chunks[0]
     similarity_score = top_chunk.get("similarity_score", 0.0)
-    
+
     if similarity_score < _SIMILARITY_THRESHOLD:
-        logger.info(f"Top chunk similarity {similarity_score:.3f} below threshold {_SIMILARITY_THRESHOLD}, skipping LLM call")
-        return DoubtAnswer(
-            answer_text="I'm not confident this is covered in your notes.",
-            source_chunk_ids=[],
-            confidence="low",
-            sections=[AnswerSection(type="pdf", content="No relevant PDF content found with sufficient confidence.", sources=None)],
-            source_type="none"
-        )
-    
+        logger.info(f"Top chunk similarity {similarity_score:.3f} below threshold {_SIMILARITY_THRESHOLD}")
+
+        # Preserve existing behavior for pdf_only
+        if source_mode == "pdf_only":
+            return DoubtAnswer(
+                answer_text="I'm not confident this is covered in your notes.",
+                source_chunk_ids=[],
+                confidence="low",
+                sections=[AnswerSection(type="pdf", content="No relevant PDF content found with sufficient confidence.", sources=None)],
+                source_type="none"
+            )
+
+        # Hybrid fallback for pdf+ai: route to general AI generation
+        logger.info("Falling back to general AI knowledge as PDF context is irrelevant")
+        try:
+            messages = [
+                {"role": "system", "content": "You are a helpful AI study companion. The provided study materials are not relevant to this specific question, so answer using your general knowledge."},
+            ]
+            if conversation_history:
+                recent_history = conversation_history[-5:] if len(conversation_history) > 5 else conversation_history
+                messages.extend(recent_history)
+            messages.append({"role": "user", "content": question.strip()})
+
+            answer = _call_llm(messages)
+            if not answer.strip():
+                raise ValueError("LLM returned empty response")
+
+            return DoubtAnswer(
+                answer_text=answer,
+                source_chunk_ids=[],
+                confidence="high",
+                sections=[AnswerSection(type="ai", content=answer, sources=None)],
+                source_type="ai"
+            )
+        except Exception as e:
+            logger.error(f"Fallback to general AI failed: {e}")
+            # Last resort failure
+            return DoubtAnswer(
+                answer_text="I'm not confident this is covered in your notes, and I encountered an error while trying to provide a general answer.",
+                source_chunk_ids=[],
+                confidence="low",
+                sections=[AnswerSection(type="pdf", content="No relevant PDF content found.", sources=None)],
+                source_type="none"
+            )
+
     # Step 2: Build prompt and call LLM
     try:
         chunk_texts = [c["text"] for c in context_chunks]
         messages = build_doubt_prompt(question, chunk_texts, conversation_history)
-        
+
         logger.info(f"Answering doubt with {len(context_chunks)} context chunks (top similarity: {similarity_score:.3f}, source_mode: {source_mode})")
         answer = _call_llm(messages)
-        
+
         if not answer.strip():
             raise ValueError("LLM returned empty response")
-        
+
         # Step 3: Parse source sections
         sections = _parse_source_sections(answer, context_chunks)
         source_type = _determine_source_type(sections)
-        
+
         # Step 4: Return DoubtAnswer with high confidence and source chunk IDs
         source_chunk_ids = [c["id"] for c in context_chunks]
-        
+
         logger.info(f"Doubt answered with confidence=high, chunks={source_chunk_ids}, source_type={source_type}")
-        
+
         return DoubtAnswer(
             answer_text=answer,
             source_chunk_ids=source_chunk_ids,
@@ -217,7 +253,7 @@ def answer_doubt(question: str, context_chunks: list[dict], source_mode: str = "
             sections=sections,
             source_type=source_type
         )
-        
+
     except Exception as e:
         logger.error(f"Failed to answer doubt: {e}")
         raise ValueError(f"Doubt resolution failed: {e}") from e

@@ -88,7 +88,7 @@ export const login = async (data: UserLogin): Promise<Token> => {
     localStorage.setItem(TOKEN_KEY, response.data.access_token);
     return response.data;
   } catch (error: any) {
-    throw error.response?.data || new Error('Login failed');
+    throw error;
   }
 };
 
@@ -127,9 +127,7 @@ export const uploadFocusDocument = async (file: File): Promise<StudyDocument> =>
 export const uploadDoubtDocument = async (file: File): Promise<StudyDocument> => {
   const formData = new FormData();
   formData.append('file', file);
-  const response = await apiClient.post<StudyDocument>('/api/doubts/documents', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  const response = await apiClient.post<StudyDocument>('/api/topics/doubts/documents', formData);
   return response.data;
 };
 
